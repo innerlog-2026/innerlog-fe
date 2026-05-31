@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 interface User {
@@ -10,6 +11,7 @@ interface User {
 }
 
 export default function TopBar() {
+  const pathname = usePathname();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -26,7 +28,7 @@ export default function TopBar() {
   }, []);
 
   return (
-    <header className="relative flex items-center justify-between px-6 h-16 bg-sky-100 shrink-0">
+    <header className="relative flex items-center justify-between px-6 h-16 bg-white border-b border-gray-200 shrink-0">
       <Link href="/" className="flex items-center">
         <Image
           src="/logo.svg"
@@ -38,11 +40,23 @@ export default function TopBar() {
         />
       </Link>
 
-      <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-8 text-sm font-medium text-gray-700">
-        <Link href="/" className="hover:text-blue-700 transition-colors">
+      <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-8 text-sm font-medium">
+        <Link
+          href="/"
+          className={`transition-colors ${
+            pathname === "/" ? "text-blue-700 font-semibold" : "text-gray-700 hover:text-blue-700"
+          }`}
+        >
           홈
         </Link>
-        <Link href="/dashboard" className="hover:text-blue-700 transition-colors">
+        <Link
+          href="/dashboard"
+          className={`transition-colors ${
+            pathname === "/dashboard"
+              ? "text-blue-700 font-semibold"
+              : "text-gray-700 hover:text-blue-700"
+          }`}
+        >
           대시보드
         </Link>
       </nav>

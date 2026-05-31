@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
+import ApplicationDetailModal from "@/components/application-detail-modal";
 
 interface User {
   name: string;
@@ -50,7 +53,9 @@ const STATUS_BADGE_COLORS: Record<Application["statusType"], string> = {
 };
 
 export default function Home() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
+  const [selectedApp, setSelectedApp] = useState<Application | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("innerlog_user");
@@ -64,71 +69,90 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-100">
+    <div className="flex-1 flex flex-col bg-white">
       <TopBar />
-      <main className="flex-1 flex justify-center py-8 px-4">
-        <div className="w-full max-w-2xl">
-          <div className="bg-white rounded-2xl shadow-sm p-8 flex flex-col gap-6">
+      <main className="flex-1 flex justify-center py-12 px-6">
+        <div className="w-full max-w-4xl">
+          <div className="flex flex-col gap-6">
             {/* Greeting */}
-            <div>
-              <p className="text-lg font-semibold text-gray-900">
+            <div className="pt-4">
+              <p className="text-2xl font-bold text-gray-900">
                 안녕하세요 {user ? `${user.name}님` : "OO님"}
               </p>
-              <p className="text-base text-gray-600">오늘도 기록해볼까요?</p>
+              <p className="text-base text-gray-500 mt-2">오늘도 기록해볼까요?</p>
             </div>
 
             {/* Banner */}
-            <div className="bg-[#1e3a6e] rounded-2xl px-6 py-5 flex items-center justify-between gap-4">
-              <div className="text-white">
-                <p className="font-bold text-base leading-tight">토스뱅크 1차 면접</p>
-                <p className="font-bold text-base leading-tight mt-1">회고하러 가볼까요?</p>
+            <button
+              onClick={() => router.push("/retrospective")}
+              className="w-full bg-[#1e3a6e] rounded-2xl px-8 py-6 flex items-center justify-between gap-6 hover:bg-blue-900 transition-colors cursor-pointer text-left"
+            >
+              <div className="text-white flex-1">
+                <p className="font-bold text-lg leading-tight">토스뱅크 1차 면접</p>
+                <p className="font-bold text-lg leading-tight mt-1">회고하러 가볼까요?</p>
               </div>
-              <button className="bg-white text-[#1e3a6e] font-semibold text-sm px-5 py-2.5 rounded-xl hover:bg-gray-50 transition-colors shrink-0 cursor-pointer">
+              <div className="bg-white text-[#1e3a6e] font-semibold text-base px-6 py-3 rounded-xl shrink-0">
                 회고 시작하기
-              </button>
-            </div>
+              </div>
+            </button>
 
             {/* Applications section */}
-            <div className="flex flex-col gap-3">
-              <p className="text-base font-semibold text-gray-800">최근 지원 현황</p>
+            <div className="flex flex-col gap-4 mt-4">
+              <p className="text-xl font-bold text-gray-900">최근 지원 현황</p>
 
               {/* Add new application */}
-              <button className="w-full border-2 border-dashed border-gray-300 rounded-xl py-4 flex items-center justify-center gap-1.5 text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors text-sm font-medium cursor-pointer">
-                <span className="text-lg leading-none font-normal">+</span>
+              <Link
+                href="/add-application"
+                className="w-full border-2 border-dashed border-gray-300 rounded-xl py-5 flex items-center justify-center gap-2 text-gray-400 hover:border-gray-400 hover:text-gray-500 transition-colors text-base font-medium"
+              >
+                <span className="text-xl leading-none font-normal">+</span>
                 새 지원 추가하기
-              </button>
+              </Link>
 
               {/* Application cards */}
               {MOCK_APPLICATIONS.map((app) => (
-                <div
+                <button
                   key={app.id}
-                  className="border border-gray-100 rounded-xl shadow-sm px-6 py-4 flex items-center justify-between"
+                  onClick={() => setSelectedApp(app)}
+                  className="w-full border border-gray-200 rounded-xl bg-gray-50 px-6 py-5 flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer text-left"
                 >
-                  <span className="font-semibold text-gray-900">{app.company}</span>
+                  <span className="font-semibold text-gray-900 text-base">{app.company}</span>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={`${STATUS_BADGE_COLORS[app.statusType]} text-white text-xs font-medium rounded-xl px-3 py-1.5 text-center leading-snug`}
+                    <div
+                      className={`${STATUS_BADGE_COLORS[app.statusType]} text-white text-xs font-medium rounded-lg px-2 text-center leading-tight w-16 h-12 flex flex-col justify-center items-center`}
                     >
-                      {app.statusLine1}
-                      <br />
-                      {app.statusLine2}
-                    </span>
+                      <div>{app.statusLine1}</div>
+                      <div>{app.statusLine2}</div>
+                    </div>
                     <button
-                      className={`text-white text-sm font-semibold rounded-xl px-4 py-2 transition-colors cursor-pointer ${
+                      className={`text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer w-16 h-12 flex items-center justify-center ${
                         app.reviewed
                           ? "bg-emerald-500 hover:bg-emerald-600"
                           : "bg-orange-400 hover:bg-orange-500"
                       }`}
                     >
-                      {app.reviewed ? "회고완료" : "회고전"}
+                      <div className="text-center">
+                        {app.reviewed ? "회고완료" : "회고전"}
+                      </div>
                     </button>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           </div>
         </div>
       </main>
+
+      {selectedApp && (
+        <ApplicationDetailModal
+          isOpen={!!selectedApp}
+          onClose={() => setSelectedApp(null)}
+          company={selectedApp.company}
+          position={selectedApp.company}
+          currentStage={selectedApp.statusLine1}
+          stageStatus={selectedApp.statusLine2}
+        />
+      )}
     </div>
   );
 }
