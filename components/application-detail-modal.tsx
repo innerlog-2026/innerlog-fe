@@ -41,8 +41,8 @@ const COMPLETED_RECORDS: RecordItem[] = [
 ];
 
 const stageColorMap = {
-  completed: "bg-teal-500",
-  ongoing: "bg-orange-400",
+  completed: "bg-[#43AA8B]",
+  ongoing: "bg-[#F7B538]",
   pending: "bg-gray-300",
 };
 
@@ -60,14 +60,14 @@ export default function ApplicationDetailModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-8 py-8 flex items-center justify-between rounded-t-3xl">
+        <div className="bg-gradient-to-r from-[#034078] to-[#023456] px-8 py-8 flex items-center justify-between rounded-t-3xl">
           <div>
             <p className="text-white text-2xl font-bold">{company}</p>
             <p className="text-blue-100 text-lg mt-1">{position}</p>
           </div>
           <div className="bg-white rounded-2xl px-6 py-3 flex flex-col items-center">
             <p className="text-sm font-semibold text-gray-700">{currentStage}</p>
-            <p className="text-base font-bold text-blue-900">{stageStatus}</p>
+            <p className="text-base font-bold text-[#034078]">{stageStatus}</p>
           </div>
           <button
             onClick={onClose}
@@ -107,12 +107,12 @@ export default function ApplicationDetailModal({
                       <p className="text-gray-900 font-bold text-base">{stage.name}</p>
                       <div className="mt-2">
                         {stage.status === "completed" && (
-                          <span className="inline-block text-xs bg-teal-100 text-teal-700 px-3 py-1.5 rounded-full font-semibold">
+                          <span className="inline-block text-xs bg-green-100 text-[#43AA8B] px-3 py-1.5 rounded-full font-semibold">
                             완료
                           </span>
                         )}
                         {stage.status === "ongoing" && (
-                          <span className="inline-block text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full font-semibold">
+                          <span className="inline-block text-xs bg-amber-100 text-[#F7B538] px-3 py-1.5 rounded-full font-semibold">
                             진행중
                           </span>
                         )}

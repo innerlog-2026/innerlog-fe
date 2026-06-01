@@ -85,7 +85,7 @@ export default function RetrospectivePage() {
                 <div
                   className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl ${
                     message.sender === "user"
-                      ? "bg-blue-500 text-white"
+                      ? "bg-[#034078] text-white"
                       : "bg-white text-gray-900 border border-gray-200"
                   }`}
                 >
@@ -95,7 +95,7 @@ export default function RetrospectivePage() {
                   <p
                     className={`text-xs mt-2 ${
                       message.sender === "user"
-                        ? "text-blue-100"
+                        ? "text-blue-200"
                         : "text-gray-400"
                     }`}
                   >
@@ -134,12 +134,12 @@ export default function RetrospectivePage() {
                 onKeyPress={handleKeyPress}
                 placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
                 rows={3}
-                className="flex-1 bg-gray-100 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                className="flex-1 bg-gray-100 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#034078] resize-none"
               />
               <button
                 onClick={handleSendMessage}
                 disabled={!inputValue.trim() || isLoading}
-                className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white font-semibold px-6 py-3 rounded-xl transition-colors self-end shrink-0"
+                className="bg-[#034078] hover:bg-[#023456] disabled:bg-gray-300 text-white font-semibold px-6 py-3 rounded-xl transition-colors self-end shrink-0"
               >
                 전송
               </button>

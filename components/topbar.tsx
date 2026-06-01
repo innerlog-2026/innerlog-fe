@@ -44,7 +44,7 @@ export default function TopBar() {
         <Link
           href="/"
           className={`transition-colors ${
-            pathname === "/" ? "text-blue-700 font-semibold" : "text-gray-700 hover:text-blue-700"
+            pathname === "/" ? "text-[#034078] font-semibold" : "text-gray-700 hover:text-[#034078]"
           }`}
         >
           홈
@@ -53,8 +53,8 @@ export default function TopBar() {
           href="/dashboard"
           className={`transition-colors ${
             pathname === "/dashboard"
-              ? "text-blue-700 font-semibold"
-              : "text-gray-700 hover:text-blue-700"
+              ? "text-[#034078] font-semibold"
+              : "text-gray-700 hover:text-[#034078]"
           }`}
         >
           대시보드
@@ -84,13 +84,13 @@ export default function TopBar() {
             <div className="flex items-center gap-2">
               <Link
                 href="/login"
-                className="text-sm font-medium text-gray-700 px-3 py-1.5 rounded-lg hover:bg-sky-200 transition-colors"
+                className="text-sm font-medium text-gray-700 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors"
               >
                 로그인
               </Link>
               <Link
                 href="/signup"
-                className="text-sm font-medium text-white bg-[#1e3a6e] px-4 py-1.5 rounded-lg hover:bg-[#162d57] transition-colors"
+                className="text-sm font-medium text-white bg-[#034078] px-4 py-1.5 rounded-lg hover:bg-[#023456] transition-colors"
               >
                 회원가입
               </Link>

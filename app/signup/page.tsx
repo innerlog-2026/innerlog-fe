@@ -3,9 +3,17 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { signup } from "@/lib/api";
+import { saveTokens } from "@/lib/auth";
 
-const JOB_OPTIONS = ["프론트엔드", "백엔드", "AI", "데이터"] as const;
-type Job = (typeof JOB_OPTIONS)[number];
+const JOB_OPTIONS = [
+  { label: "프론트엔드", value: "FRONT" as const },
+  { label: "백엔드", value: "BACK" as const },
+  { label: "AI", value: "AI" as const },
+  { label: "데이터", value: "DATA" as const },
+];
+type JobValue = "FRONT" | "BACK" | "AI" | "DATA";
 
 type FieldErrors = {
   email: string;
@@ -64,12 +72,15 @@ function validateNickname(value: string): string {
 }
 
 export default function SignupPage() {
+  const router = useRouter();
   const [step, setStep] = useState<1 | 2>(1);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [nickname, setNickname] = useState("");
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
+  const [selectedJob, setSelectedJob] = useState<JobValue | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState("");
 
   const [errors, setErrors] = useState<FieldErrors>({
     email: "",
@@ -129,9 +140,29 @@ export default function SignupPage() {
     setStep(2);
   }
 
-  function handleStep2(e: React.FormEvent) {
+  async function handleStep2(e: React.FormEvent) {
     e.preventDefault();
-    // TODO: connect to API
+    if (!selectedJob) return;
+
+    setApiError("");
+    setIsLoading(true);
+
+    try {
+      const { access_token, refresh_token } = await signup({
+        email,
+        password,
+        name: nickname,
+        part: selectedJob,
+      });
+      saveTokens(access_token, refresh_token, nickname);
+      router.push("/dashboard");
+    } catch (err) {
+      setApiError(
+        err instanceof Error ? err.message : "회원가입에 실패했습니다."
+      );
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   if (step === 1) {
@@ -141,6 +172,12 @@ export default function SignupPage() {
           <Logo />
           <div className="w-full bg-white rounded-2xl shadow-md px-7 py-7">
             <form onSubmit={handleStep1} className="flex flex-col gap-4" noValidate>
+              {apiError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                  {apiError}
+                </div>
+              )}
+
               <div className="flex flex-col gap-1.5">
                 <label className="text-sm font-medium text-gray-800">이메일</label>
                 <input
@@ -149,6 +186,7 @@ export default function SignupPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   onBlur={() => handleBlur("email")}
+                  disabled={isLoading}
                   className={inputClass(touched.email && !!errors.email)}
                 />
                 {touched.email && errors.email && (
@@ -164,6 +202,7 @@ export default function SignupPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onBlur={() => handleBlur("password")}
+                  disabled={isLoading}
                   className={inputClass(touched.password && !!errors.password)}
                 />
                 {touched.password && errors.password && (
@@ -179,6 +218,7 @@ export default function SignupPage() {
                   value={passwordConfirm}
                   onChange={(e) => setPasswordConfirm(e.target.value)}
                   onBlur={() => handleBlur("passwordConfirm")}
+                  disabled={isLoading}
                   className={inputClass(touched.passwordConfirm && !!errors.passwordConfirm)}
                 />
                 {touched.passwordConfirm && errors.passwordConfirm && (
@@ -194,6 +234,7 @@ export default function SignupPage() {
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   onBlur={() => handleBlur("nickname")}
+                  disabled={isLoading}
                   className={inputClass(touched.nickname && !!errors.nickname)}
                 />
                 {touched.nickname && errors.nickname && (
@@ -203,9 +244,10 @@ export default function SignupPage() {
 
               <button
                 type="submit"
-                className="mt-1 w-full bg-[#1e3a6e] hover:bg-[#162d57] active:bg-[#0f2040] text-white font-medium py-3 rounded-lg transition-colors cursor-pointer"
+                disabled={isLoading}
+                className="mt-1 w-full bg-[#034078] hover:bg-[#023456] active:bg-[#001a35] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors cursor-pointer"
               >
-                회원가입
+                {isLoading ? "처리 중..." : "다음"}
               </button>
             </form>
             <BottomLink />
@@ -221,39 +263,50 @@ export default function SignupPage() {
         <Logo />
         <div className="w-full bg-white rounded-2xl shadow-md px-7 py-7">
           <form onSubmit={handleStep2} className="flex flex-col gap-4">
+            {apiError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {apiError}
+              </div>
+            )}
+
             <div className="flex items-center gap-2 mb-1">
               <button
                 type="button"
-                onClick={() => setStep(1)}
+                onClick={() => {
+                  setStep(1);
+                  setApiError("");
+                }}
                 aria-label="이전 단계로"
-                className="text-gray-400 hover:text-gray-600 text-sm transition-colors cursor-pointer"
+                disabled={isLoading}
+                className="text-gray-400 hover:text-gray-600 text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 ←
               </button>
               <p className="font-bold text-gray-900 text-base">희망직군 (택1)</p>
             </div>
             <div className="flex flex-col gap-2">
-              {JOB_OPTIONS.map((job) => (
+              {JOB_OPTIONS.map(({ label, value }) => (
                 <button
-                  key={job}
+                  key={value}
                   type="button"
-                  onClick={() => setSelectedJob(job)}
-                  className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors cursor-pointer ${
-                    selectedJob === job
-                      ? "border-blue-400 bg-blue-50 text-blue-700 font-medium"
+                  onClick={() => setSelectedJob(value)}
+                  disabled={isLoading}
+                  className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                    selectedJob === value
+                      ? "border-[#034078] bg-blue-50 text-[#034078] font-medium"
                       : "border-gray-200 bg-white text-gray-800 hover:border-gray-300"
                   }`}
                 >
-                  {job}
+                  {label}
                 </button>
               ))}
             </div>
             <button
               type="submit"
-              disabled={!selectedJob}
-              className="mt-1 w-full bg-[#1e3a6e] hover:bg-[#162d57] active:bg-[#0f2040] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors cursor-pointer"
+              disabled={!selectedJob || isLoading}
+              className="mt-1 w-full bg-[#034078] hover:bg-[#023456] active:bg-[#001a35] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium py-3 rounded-lg transition-colors cursor-pointer"
             >
-              회원가입
+              {isLoading ? "회원가입 중..." : "회원가입"}
             </button>
           </form>
           <BottomLink />
