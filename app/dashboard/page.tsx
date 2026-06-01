@@ -72,15 +72,15 @@ export default function Dashboard() {
   };
 
   const keywordColorMap = {
-    orange: "bg-orange-400",
-    red: "bg-red-400",
-    blue: "bg-blue-400",
+    orange: "bg-[#F7B538]",
+    red: "bg-[#EE6055]",
+    blue: "bg-[#8ECAE6]",
   };
 
   const stageColorMap = {
-    blue: "bg-blue-400",
-    orange: "bg-orange-400",
-    red: "bg-red-400",
+    blue: "bg-[#034078]",
+    orange: "bg-[#F7B538]",
+    red: "bg-[#EE6055]",
   };
 
   return (
@@ -102,7 +102,7 @@ export default function Dashboard() {
                   className="bg-white rounded-2xl border border-gray-200 p-6 flex flex-col gap-3"
                 >
                   <p className="text-sm font-medium text-gray-600">{stat.label}</p>
-                  <p className="text-3xl font-bold text-blue-900">{stat.value}</p>
+                  <p className="text-3xl font-bold text-[#034078]">{stat.value}</p>
                 </div>
               ))}
             </div>
@@ -165,15 +165,15 @@ export default function Dashboard() {
               <div className="flex items-center gap-4 mb-6">
                 <div className="flex-1 bg-gray-200 rounded-full h-8 flex overflow-hidden">
                   <div
-                    className="bg-gray-400"
+                    className="bg-[#D9D9D9]"
                     style={{ width: `${emotionData.neutral}%` }}
                   />
                   <div
-                    className="bg-blue-400"
+                    className="bg-[#43AA8B]"
                     style={{ width: `${emotionData.positive}%` }}
                   />
                   <div
-                    className="bg-red-400"
+                    className="bg-[#EE6055]"
                     style={{ width: `${emotionData.negative}%` }}
                   />
                 </div>
@@ -181,19 +181,19 @@ export default function Dashboard() {
 
               <div className="flex gap-6">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-gray-400" />
+                  <div className="w-3 h-3 rounded-full bg-[#D9D9D9]" />
                   <span className="text-sm text-gray-700">
                     중립 <span className="font-semibold">{emotionData.neutral}%</span>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-blue-400" />
+                  <div className="w-3 h-3 rounded-full bg-[#43AA8B]" />
                   <span className="text-sm text-gray-700">
                     긍정 <span className="font-semibold">{emotionData.positive}%</span>
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-400" />
+                  <div className="w-3 h-3 rounded-full bg-[#EE6055]" />
                   <span className="text-sm text-gray-700">
                     부정 <span className="font-semibold">{emotionData.negative}%</span>
                   </span>

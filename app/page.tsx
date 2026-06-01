@@ -47,17 +47,19 @@ const MOCK_APPLICATIONS: Application[] = [
 ];
 
 const STATUS_BADGE_COLORS: Record<Application["statusType"], string> = {
-  progress: "bg-teal-400",
-  fail: "bg-rose-400",
-  pass: "bg-blue-500",
+  progress: "bg-[#8ECAE6]",
+  fail: "bg-[#EE6055]",
+  pass: "bg-[#43AA8B]",
 };
 
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const stored = localStorage.getItem("innerlog_user");
     if (stored) {
       try {
@@ -77,7 +79,7 @@ export default function Home() {
             {/* Greeting */}
             <div className="pt-4">
               <p className="text-2xl font-bold text-gray-900">
-                안녕하세요 {user ? `${user.name}님` : "OO님"}
+                {mounted && user ? `안녕하세요 ${user.name}님` : "안녕하세요 OO님"}
               </p>
               <p className="text-base text-gray-500 mt-2">오늘도 기록해볼까요?</p>
             </div>
@@ -85,13 +87,13 @@ export default function Home() {
             {/* Banner */}
             <button
               onClick={() => router.push("/retrospective")}
-              className="w-full bg-[#1e3a6e] rounded-2xl px-8 py-6 flex items-center justify-between gap-6 hover:bg-blue-900 transition-colors cursor-pointer text-left"
+              className="w-full bg-[#034078] rounded-2xl px-8 py-6 flex items-center justify-between gap-6 hover:bg-[#023456] transition-colors cursor-pointer text-left"
             >
               <div className="text-white flex-1">
                 <p className="font-bold text-lg leading-tight">토스뱅크 1차 면접</p>
                 <p className="font-bold text-lg leading-tight mt-1">회고하러 가볼까요?</p>
               </div>
-              <div className="bg-white text-[#1e3a6e] font-semibold text-base px-6 py-3 rounded-xl shrink-0">
+              <div className="bg-white text-[#034078] font-semibold text-base px-6 py-3 rounded-xl shrink-0">
                 회고 시작하기
               </div>
             </button>
@@ -119,16 +121,16 @@ export default function Home() {
                   <span className="font-semibold text-gray-900 text-base">{app.company}</span>
                   <div className="flex items-center gap-2">
                     <div
-                      className={`${STATUS_BADGE_COLORS[app.statusType]} text-white text-xs font-medium rounded-lg px-2 text-center leading-tight w-16 h-12 flex flex-col justify-center items-center`}
+                      className={`${STATUS_BADGE_COLORS[app.statusType]} text-white text-xs font-bold rounded-lg px-2 text-center leading-tight w-20 h-10 flex flex-col justify-center items-center`}
                     >
                       <div>{app.statusLine1}</div>
                       <div>{app.statusLine2}</div>
                     </div>
                     <button
-                      className={`text-white text-xs font-semibold rounded-lg transition-colors cursor-pointer w-16 h-12 flex items-center justify-center ${
+                      className={`text-white text-sm font-bold rounded-lg transition-colors cursor-pointer w-20 h-10 flex items-center justify-center ${
                         app.reviewed
-                          ? "bg-emerald-500 hover:bg-emerald-600"
-                          : "bg-orange-400 hover:bg-orange-500"
+                          ? "bg-[#43AA8B]"
+                          : "bg-[#EE6055]"
                       }`}
                     >
                       <div className="text-center">
