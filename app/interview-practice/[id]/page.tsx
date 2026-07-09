@@ -313,18 +313,18 @@ export default function InterviewPracticePage() {
             </div>
 
             {/* File Upload */}
-            <div className="mb-6">
-              <label className="text-sm font-semibold text-gray-900 block mb-2">
+            <div className="mb-8">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">
                 파일 업로드
-              </label>
-              <label className="w-full border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-gray-400 transition-colors">
+              </h3>
+              <label className="w-full bg-gray-100 rounded-2xl p-4 text-center cursor-pointer hover:bg-gray-150 transition-colors block mb-4">
                 <input
                   type="file"
                   accept="audio/*"
                   onChange={handleFileUpload}
                   className="hidden"
                 />
-                <p className="text-sm text-gray-600">
+                <p className="text-gray-500 text-sm">
                   {uploadedFile
                     ? `✓ ${uploadedFile.name}`
                     : "음성 파일을 업로드하세요 (100MB 이하, MP3/WAV)"}
@@ -333,20 +333,20 @@ export default function InterviewPracticePage() {
             </div>
 
             {/* Buttons */}
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <button
                 onClick={() => {
                   if (isRecording) handleStopRecording();
                   setShowModal(false);
                 }}
-                className="flex-1 border border-gray-300 text-gray-700 font-semibold py-3 rounded-lg hover:bg-gray-50 transition-colors"
+                className="flex-1 border-2 border-[#034078] text-[#034078] font-semibold py-3 rounded-full hover:bg-blue-50 transition-colors"
               >
                 취소하기
               </button>
               <button
                 onClick={handleSubmitVoice}
                 disabled={!uploadedFile}
-                className={`flex-1 font-semibold py-3 rounded-lg text-white transition-colors ${
+                className={`flex-1 font-semibold py-3 rounded-full text-white transition-colors ${
                   uploadedFile
                     ? "bg-[#034078] hover:bg-[#023456]"
                     : "bg-gray-400 cursor-not-allowed"
