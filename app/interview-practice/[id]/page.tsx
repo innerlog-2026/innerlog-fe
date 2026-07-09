@@ -284,7 +284,7 @@ export default function InterviewPracticePage() {
             )}
 
             {/* Microphone Button */}
-            <div className="flex justify-center mb-6">
+            <div className="flex flex-col items-center gap-4 mb-6">
               <button
                 onClick={isRecording ? handleStopRecording : handleStartRecording}
                 className={`flex items-center justify-center transition-all ${
@@ -296,13 +296,13 @@ export default function InterviewPracticePage() {
                 <div className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all ${
                   isRecording
                     ? "bg-red-500 shadow-lg animate-pulse"
-                    : "bg-blue-50"
+                    : "bg-white"
                 }`}>
                   <Image
                     src="/mic.svg"
                     alt={isRecording ? "녹음 중지" : "녹음 시작"}
-                    width={60}
-                    height={60}
+                    width={50}
+                    height={50}
                     className={isRecording ? "brightness-0 invert" : ""}
                   />
                   {isRecording && (
@@ -310,6 +310,14 @@ export default function InterviewPracticePage() {
                   )}
                 </div>
               </button>
+              {isRecording && (
+                <button
+                  onClick={handleStopRecording}
+                  className="bg-red-500 hover:bg-red-600 text-white font-semibold px-6 py-2 rounded-full transition-colors text-sm"
+                >
+                  ⏹ 녹음 중지
+                </button>
+              )}
             </div>
 
             {/* File Upload */}
@@ -339,14 +347,14 @@ export default function InterviewPracticePage() {
                   if (isRecording) handleStopRecording();
                   setShowModal(false);
                 }}
-                className="flex-1 border-2 border-[#034078] text-[#034078] font-semibold py-3 rounded-full hover:bg-blue-50 transition-colors"
+                className="flex-1 border-1 border-[#034078] text-[#034078] font-semibold py-3 rounded-xl hover:bg-blue-50 transition-colors"
               >
                 취소하기
               </button>
               <button
                 onClick={handleSubmitVoice}
                 disabled={!uploadedFile}
-                className={`flex-1 font-semibold py-3 rounded-full text-white transition-colors ${
+                className={`flex-1 font-semibold py-3 rounded-xl text-white transition-colors ${
                   uploadedFile
                     ? "bg-[#034078] hover:bg-[#023456]"
                     : "bg-gray-400 cursor-not-allowed"
