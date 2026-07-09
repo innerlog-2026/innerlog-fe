@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
+import Image from "next/image";
 import TopBar from "@/components/topbar";
 
 interface VoiceRecording {
@@ -286,13 +287,28 @@ export default function InterviewPracticePage() {
             <div className="flex justify-center mb-6">
               <button
                 onClick={isRecording ? handleStopRecording : handleStartRecording}
-                className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl font-bold transition-all ${
+                className={`flex items-center justify-center transition-all ${
                   isRecording
-                    ? "bg-red-500 hover:bg-red-600 scale-110 shadow-lg"
-                    : "bg-gray-200 hover:bg-gray-300 border-2 border-gray-400"
+                    ? "scale-110"
+                    : "hover:scale-105"
                 }`}
               >
-                {isRecording ? "⏹" : "🎤"}
+                <div className={`relative w-24 h-24 rounded-full flex items-center justify-center transition-all ${
+                  isRecording
+                    ? "bg-red-500 shadow-lg animate-pulse"
+                    : "bg-blue-50"
+                }`}>
+                  <Image
+                    src="/mic.svg"
+                    alt={isRecording ? "녹음 중지" : "녹음 시작"}
+                    width={60}
+                    height={60}
+                    className={isRecording ? "brightness-0 invert" : ""}
+                  />
+                  {isRecording && (
+                    <div className="absolute inset-0 rounded-full border-4 border-red-400 animate-ping opacity-75"></div>
+                  )}
+                </div>
               </button>
             </div>
 
