@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import TopBar from "@/components/topbar";
 
@@ -31,6 +31,11 @@ export default function InterviewPracticePage() {
   const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const totalPages = Math.ceil(QUESTIONS.length / ITEMS_PER_PAGE);
   const startIdx = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -40,11 +45,59 @@ export default function InterviewPracticePage() {
     setSelectedQuestion(questionIdx);
     setShowModal(true);
     setUploadedFile(null);
+    setIsRecording(false);
+    setRecordingTime(0);
+    audioChunksRef.current = [];
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
       setUploadedFile(e.target.files[0]);
+    }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, {
+          type: "audio/wav",
+        });
+        const file = new File([audioBlob], "recorded-audio.wav", {
+          type: "audio/wav",
+        });
+        setUploadedFile(file);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (error) {
+      alert("마이크 권한을 허용해주세요");
+    }
+  };
+
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => {
+        track.stop();
+      });
+      setIsRecording(false);
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     }
   };
 
@@ -84,6 +137,15 @@ export default function InterviewPracticePage() {
     }
     router.push(`/interview-practice/${interviewId}/analysis`);
   };
+
+  useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      if (isRecording && mediaRecorderRef.current) {
+        mediaRecorderRef.current.stop();
+      }
+    };
+  }, []);
 
   const hasAllRecordings = voiceRecordings.length === QUESTIONS.length;
 
@@ -211,11 +273,27 @@ export default function InterviewPracticePage() {
               질문에 대한 답변 녹음하거나 파일을 업로드 하세요.
             </p>
 
-            {/* Microphone Icon */}
-            <div className="flex justify-center mb-6">
-              <div className="w-16 h-16 rounded-full border-2 border-gray-300 flex items-center justify-center">
-                <span className="text-3xl">🎤</span>
+            {/* Recording Status */}
+            {isRecording && (
+              <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
+                <p className="text-red-700 font-semibold text-center">
+                  🔴 녹음 중... {String(Math.floor(recordingTime / 60)).padStart(2, "0")}:{String(recordingTime % 60).padStart(2, "0")}
+                </p>
               </div>
+            )}
+
+            {/* Microphone Button */}
+            <div className="flex justify-center mb-6">
+              <button
+                onClick={isRecording ? handleStopRecording : handleStartRecording}
+                className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl font-bold transition-all ${
+                  isRecording
+                    ? "bg-red-500 hover:bg-red-600 scale-110 shadow-lg"
+                    : "bg-gray-200 hover:bg-gray-300 border-2 border-gray-400"
+                }`}
+              >
+                {isRecording ? "⏹" : "🎤"}
+              </button>
             </div>
 
             {/* File Upload */}
@@ -232,7 +310,7 @@ export default function InterviewPracticePage() {
                 />
                 <p className="text-sm text-gray-600">
                   {uploadedFile
-                    ? uploadedFile.name
+                    ? `✓ ${uploadedFile.name}`
                     : "음성 파일을 업로드하세요 (100MB 이하, MP3/WAV)"}
                 </p>
               </label>
@@ -241,7 +319,10 @@ export default function InterviewPracticePage() {
             {/* Buttons */}
             <div className="flex gap-3">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={() => {
+                  if (isRecording) handleStopRecording();
+                  setShowModal(false);
+                }}
                 className="flex-1 border border-gray-300 text-gray-700 font-semibold py-3 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 취소하기
