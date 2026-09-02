@@ -124,12 +124,12 @@ export default function Dashboard() {
         ]);
 
         // 4. 전형 단계별 합격 현황
-        const colorMap = { 0: "blue", 1: "orange", 2: "red" };
+        const colorMap: Record<number, "blue" | "orange" | "red"> = { 0: "blue", 1: "orange", 2: "red" };
         const stages = Object.entries(stageCountMap).map(([stage, counts], idx) => ({
           stage,
           count: counts.passed,
           total: counts.total,
-          color: colorMap[idx % 3] as "blue" | "orange" | "red",
+          color: colorMap[idx % 3] || "blue",
         }));
         setStageProgress(stages);
 

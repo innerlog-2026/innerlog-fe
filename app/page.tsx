@@ -13,7 +13,7 @@ interface User {
 }
 
 interface Application {
-  id: number;
+  id: string;
   company: string;
   statusLine1: string;
   statusLine2: string;
@@ -23,7 +23,7 @@ interface Application {
 
 const MOCK_APPLICATIONS: Application[] = [
   {
-    id: 1,
+    id: "1",
     company: "토스 뱅크",
     statusLine1: "서류전형",
     statusLine2: "진행중",
@@ -31,7 +31,7 @@ const MOCK_APPLICATIONS: Application[] = [
     reviewed: false,
   },
   {
-    id: 2,
+    id: "2",
     company: "토스 뱅크",
     statusLine1: "서류전형",
     statusLine2: "진행중",
@@ -39,7 +39,7 @@ const MOCK_APPLICATIONS: Application[] = [
     reviewed: false,
   },
   {
-    id: 3,
+    id: "3",
     company: "토스 뱅크",
     statusLine1: "최종면접",
     statusLine2: "탈락",
@@ -196,7 +196,7 @@ export default function Home() {
 
               {/* Application cards */}
               {applications.map((app) => (
-                <button
+                <div
                   key={app.id}
                   onClick={() => setSelectedApp(app)}
                   className="w-full border border-gray-200 rounded-xl bg-gray-50 px-6 py-5 flex items-center justify-between hover:bg-gray-100 transition-colors cursor-pointer text-left"
@@ -215,13 +215,14 @@ export default function Home() {
                           ? "bg-[#43AA8B]"
                           : "bg-[#EE6055]"
                       }`}
+                      onClick={(e) => e.stopPropagation()}
                     >
                       <div className="text-center">
                         {app.reviewed ? "회고완료" : "회고전"}
                       </div>
                     </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>

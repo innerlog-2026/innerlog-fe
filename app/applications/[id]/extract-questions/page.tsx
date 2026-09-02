@@ -97,14 +97,14 @@ export default function ExtractQuestionsPage() {
         return;
       }
 
-      if (!applicationData) {
+      if (!applicationData || !applicationId) {
         setError("지원 정보를 불러올 수 없습니다");
         return;
       }
 
       const response = await createSpeechPractice(
         {
-          application_id: applicationId.toString(),
+          application_id: applicationId as string,
           company_name: applicationData.company_name,
           position: applicationData.position,
           personal_statements: filledQuestions.map((qs) => ({

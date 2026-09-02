@@ -242,16 +242,16 @@ export default function ApplicationDetailModal({
             return { ...stage, status: nextStatus };
           } else if (stage.id < stageId && nextStatus === "합격") {
             return { ...stage, status: "합격" };
-          } else if (stage.id > stageId && nextStatus === "대기") {
-            return { ...stage, status: "대기" };
+          } else if (stage.id > stageId && nextStatus === "진행중") {
+            return { ...stage, status: "진행중" };
           }
           return stage;
         })
       );
 
       // 디스플레이 업데이트
-      if (nextStatus === "대기") {
-        const nextOngoingStage = stages.find((s) => s.status === "진행중" || s.status === "대기");
+      if (nextStatus === "진행중") {
+        const nextOngoingStage = stages.find((s) => s.status === "진행중");
         if (nextOngoingStage) {
           setDisplayStage(nextOngoingStage.name);
           setDisplayStatus("진행중");
@@ -266,8 +266,8 @@ export default function ApplicationDetailModal({
   };
 
   const generateGradient = () => {
-    const completedCount = stages.filter((s) => s.status === "completed").length;
-    const ongoingCount = stages.filter((s) => s.status === "ongoing").length;
+    const completedCount = stages.filter((s) => s.status === "합격").length;
+    const ongoingCount = stages.filter((s) => s.status === "진행중").length;
     const totalStages = stages.length;
 
     const completedPercent = (completedCount / totalStages) * 100;
