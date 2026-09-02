@@ -22,9 +22,6 @@ export default function LoginPage() {
     try {
       const { access_token, refresh_token } = await login({ email, password });
 
-      // JWT 토큰에서 사용자 정보 추출 (email 기반으로 이름 표시)
-      // 실제로는 백엔드에서 사용자 정보를 받아야 하지만,
-      // 임시로 이메일 주소를 사용하거나 별도 API 호출 필요
       const userName = email.split("@")[0];
 
       saveTokens(access_token, refresh_token, userName);
