@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
+import { getApplications } from "@/lib/api";
+import { getAccessToken } from "@/lib/auth";
 
 interface User {
   name: string;
@@ -57,18 +59,87 @@ export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [applications, setApplications] = useState<Application[]>(MOCK_APPLICATIONS);
 
   useEffect(() => {
     setMounted(true);
-    const stored = localStorage.getItem("innerlog_user");
-    if (stored) {
+    const loadData = async () => {
       try {
-        setUser(JSON.parse(stored));
-      } catch {
-        // ignore
+        const token = getAccessToken();
+        if (!token) {
+          console.log("No token found, redirecting to login");
+          router.push("/login");
+          return;
+        }
+
+        const stored = localStorage.getItem("innerlog_user");
+        if (stored) {
+          try {
+            setUser(JSON.parse(stored));
+          } catch {
+            // ignore
+          }
+        }
+
+        const response = await getApplications(token);
+        const displayApps: Application[] = response.items.map((item) => {
+          // status 값에 따라 상태 표시
+          let statusLine2: string;
+          let statusType: "progress" | "fail" | "pass";
+
+          if (item.status === "COMPLETED") {
+            statusLine2 = "합격";
+            statusType = "pass";
+          } else if (item.status === "PREPARING") {
+            statusLine2 = "준비중";
+            statusType = "fail";
+          } else {
+            // IN_PROGRESS
+            statusLine2 = "진행중";
+            statusType = "progress";
+          }
+
+          return {
+            id: item.application_id,
+            company: item.company_name,
+            statusLine1: item.stage,
+            statusLine2,
+            statusType,
+            reviewed: false, // TODO: 실제 회고 완료 여부 확인
+          };
+        });
+        setApplications(displayApps);
+      } catch (error) {
+        console.error("Failed to load applications:", error);
+        // 토큰 오류면 로그인 페이지로
+        if (error instanceof Error && error.message.includes("401")) {
+          router.push("/login");
+        }
       }
+    };
+
+    loadData();
+  }, [router]);
+
+  const getNextAction = (app: Application) => {
+    // 회고가 완료되지 않았으면 회고하러 가기
+    if (!app.reviewed && app.statusType === "progress") {
+      return {
+        title: app.company,
+        action: `회고하러 가볼까요?`,
+        button: "회고 시작하기",
+        href: `/retrospective?applicationId=${app.id}`,
+      };
     }
-  }, []);
+
+    // 회고가 완료되었거나 상태가 진행 중이 아니면 다음 작업
+    return {
+      title: app.company,
+      action: `예상 질문을 추출해볼까요?`,
+      button: "예상 질문 추출하기",
+      href: `/applications/${app.id}/extract-questions`,
+    };
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-white">
@@ -85,18 +156,30 @@ export default function Home() {
             </div>
 
             {/* Banner */}
-            <button
-              onClick={() => router.push("/retrospective")}
-              className="w-full bg-[#034078] rounded-2xl px-8 py-6 flex items-center justify-between gap-6 hover:bg-[#023456] transition-colors cursor-pointer text-left"
-            >
-              <div className="text-white flex-1">
-                <p className="font-bold text-lg leading-tight">토스뱅크 1차 면접</p>
-                <p className="font-bold text-lg leading-tight mt-1">회고하러 가볼까요?</p>
-              </div>
-              <div className="bg-white text-[#034078] font-semibold text-base px-6 py-3 rounded-xl shrink-0">
-                회고 시작하기
-              </div>
-            </button>
+            {(() => {
+              const firstApp = applications[0];
+              if (!firstApp) return null;
+              const nextAction = getNextAction(firstApp);
+              return (
+                <button
+                  onClick={() => router.push(nextAction.href)}
+                  className="w-full bg-[#034078] rounded-2xl px-8 py-6 flex items-center justify-between gap-6 hover:bg-[#023456] transition-colors cursor-pointer text-left"
+                >
+                  <div className="text-white flex-1">
+                    <p className="font-bold text-lg leading-tight">
+                      {nextAction.title}
+                    </p>
+                    <p className="font-bold text-lg leading-tight mt-1">
+                      {nextAction.action}
+                    </p>
+                  </div>
+                  <div className="bg-white text-[#034078] font-semibold text-base px-6 py-3 rounded-xl shrink-0">
+                    {nextAction.button}
+                  </div>
+                </button>
+              );
+            })()}
+
 
             {/* Applications section */}
             <div className="flex flex-col gap-4 mt-4">
@@ -112,7 +195,7 @@ export default function Home() {
               </Link>
 
               {/* Application cards */}
-              {MOCK_APPLICATIONS.map((app) => (
+              {applications.map((app) => (
                 <button
                   key={app.id}
                   onClick={() => setSelectedApp(app)}
@@ -149,6 +232,7 @@ export default function Home() {
         <ApplicationDetailModal
           isOpen={!!selectedApp}
           onClose={() => setSelectedApp(null)}
+          applicationId={selectedApp.id}
           company={selectedApp.company}
           position={selectedApp.company}
           currentStage={selectedApp.statusLine1}

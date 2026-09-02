@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { clearTokens } from "@/lib/auth";
 
 interface User {
   name: string;
@@ -12,6 +13,7 @@ interface User {
 
 export default function TopBar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [mounted, setMounted] = useState(false);
 
@@ -26,6 +28,12 @@ export default function TopBar() {
       }
     }
   }, []);
+
+  const handleLogout = () => {
+    clearTokens();
+    setUser(null);
+    router.push("/login");
+  };
 
   return (
     <header className="relative flex items-center justify-between px-6 h-16 bg-white border-b border-gray-200 shrink-0">
@@ -61,25 +69,33 @@ export default function TopBar() {
         </Link>
       </nav>
 
-      <div className="flex items-center min-w-[120px] justify-end">
+      <div className="flex items-center gap-4 justify-end">
         {mounted &&
           (user ? (
-            <div className="flex items-center gap-2">
-              <div className="w-9 h-9 rounded-full bg-gray-400 overflow-hidden flex items-center justify-center text-white text-sm font-semibold shrink-0">
-                {user.profileImage ? (
-                  <Image
-                    src={user.profileImage}
-                    alt={user.name}
-                    width={36}
-                    height={36}
-                    className="object-cover w-full h-full"
-                  />
-                ) : (
-                  user.name[0]
-                )}
+            <>
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-full bg-gray-400 overflow-hidden flex items-center justify-center text-white text-sm font-semibold shrink-0">
+                  {user.profileImage ? (
+                    <Image
+                      src={user.profileImage}
+                      alt={user.name}
+                      width={36}
+                      height={36}
+                      className="object-cover w-full h-full"
+                    />
+                  ) : (
+                    user.name[0]
+                  )}
+                </div>
+                <span className="text-sm font-medium text-gray-800">{user.name}</span>
               </div>
-              <span className="text-sm font-medium text-gray-800">{user.name}</span>
-            </div>
+              <button
+                onClick={handleLogout}
+                className="text-sm font-medium text-gray-700 px-3 py-1.5 rounded-lg hover:bg-red-100 hover:text-red-700 transition-colors"
+              >
+                로그아웃
+              </button>
+            </>
           ) : (
             <div className="flex items-center gap-2">
               <Link
