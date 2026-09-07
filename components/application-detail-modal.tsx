@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { updateStageResult, getApplicationDetail } from "@/lib/api";
+import { updateStageResult, getApplicationDetail, getRetrospects } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface Stage {
@@ -36,33 +36,21 @@ const STAGE_RECORDS: {
   };
 } = {
   서류전형: {
-    ongoing: [
-      { id: 1, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
-      { id: 2, title: "1차 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
-    completed: [
-      { id: 3, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
-      { id: 4, title: "1차 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
+    ongoing: [],
+    completed: [],
   },
   코딩테스트: {
-    ongoing: [
-      { id: 5, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
-      { id: 6, title: "1차 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
-    completed: [
-      { id: 7, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
-      { id: 8, title: "1차 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
+    ongoing: [],
+    completed: [],
   },
   "1차면접": {
     ongoing: [
       { id: 9, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
       { id: 10, title: "1차 면접 연습", description: "면접을 대비해 연습해요" },
+      { id: 12, title: "1차 면접 회고", description: "지난 면접을 회고해요" },
     ],
     completed: [
       { id: 11, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
-      { id: 12, title: "1차 면접 회고", description: "지난 면접을 회고해요" },
       { id: 13, title: "2차 면접 연습", description: "다음 면접을 대비해요" },
     ],
   },
@@ -70,19 +58,17 @@ const STAGE_RECORDS: {
     ongoing: [
       { id: 14, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
       { id: 15, title: "2차 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
-    completed: [
       { id: 16, title: "2차 면접 회고", description: "지난 면접을 회고해요" },
     ],
+    completed: [],
   },
   "최종면접": {
     ongoing: [
       { id: 17, title: "예상 질문 추출하기", description: "예상되는 질문들을 미리 준비해요" },
       { id: 18, title: "최종 면접 연습", description: "면접을 대비해 연습해요" },
-    ],
-    completed: [
       { id: 19, title: "최종 면접 회고", description: "지난 면접을 회고해요" },
     ],
+    completed: [],
   },
 };
 
@@ -91,6 +77,14 @@ const stageColorMap = {
   "탈락": "bg-[#EE6055]",
   "진행중": "bg-[#F7B538]",
   "대기": "bg-gray-300",
+};
+
+const NEXT_STAGE: Record<string, string> = {
+  "서류전형": "코딩테스트",
+  "코딩테스트": "1차면접",
+  "1차면접": "2차면접",
+  "2차면접": "최종면접",
+  "최종면접": "결과확정",
 };
 
 export default function ApplicationDetailModal({
@@ -109,6 +103,9 @@ export default function ApplicationDetailModal({
   const [completedItems, setCompletedItems] = useState<{
     [key: string]: boolean;
   }>({});
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const loadApplicationDetail = async () => {
@@ -157,6 +154,16 @@ export default function ApplicationDetailModal({
             ? "완료"
             : "준비중"
         );
+
+        // 회고 완료 상태 반영
+        const newCompletedItems: { [key: number]: boolean } = {};
+        if (detail.first_interview_retrospect_completed) {
+          newCompletedItems[12] = true;  // 1차 면접 회고
+        }
+        if (detail.second_interview_retrospect_completed) {
+          newCompletedItems[16] = true;  // 2차 면접 회고
+        }
+        setCompletedItems(newCompletedItems);
       } catch (error) {
         console.error("Failed to load application detail:", error);
 
@@ -182,13 +189,175 @@ export default function ApplicationDetailModal({
     }
   }, [isOpen, applicationId, currentStage, stageStatus]);
 
-  const handleRecordItemClick = (itemTitle: string) => {
+  // 현재 stage 이하의 모든 stage가 활성화되도록 변경
+  const getActivatedStages = (): string[] => {
+    const currentIdx = ALL_STAGES.indexOf(currentStage);
+    if (currentIdx === -1) return [];
+    return ALL_STAGES.slice(0, currentIdx + 1);
+  };
+
+  // stage의 이 활동이 활성화되었는지 확인
+  const isFeatureActive = (stageName: string, itemTitle: string): boolean => {
+    const activatedStages = getActivatedStages();
+    if (!activatedStages.includes(stageName)) return false;
+
+    const stageObj = stages.find((s) => s.name === stageName);
+    if (!stageObj) return false;
+
+    // 스피치 연습 활성화: 진행중이거나 이미 완료된(합격/탈락) 단계
+    if (itemTitle.includes("연습")) {
+      return (
+        stageObj.status === "진행중" ||
+        stageObj.status === "합격" ||
+        stageObj.status === "탈락"
+      );
+    }
+
+    // 회고 활성화: 완료된(합격/탈락) 단계
+    if (itemTitle.includes("회고")) {
+      return stageObj.status === "합격" || stageObj.status === "탈락";
+    }
+
+    // 예상 질문 추출: 진행중인 단계
+    if (itemTitle === "예상 질문 추출하기") {
+      return stageObj.status === "진행중";
+    }
+
+    return false;
+  };
+
+  const handleRecordItemClick = async (stageName: string, itemTitle: string, itemId: number) => {
+    if (!isFeatureActive(stageName, itemTitle)) {
+      alert("현재 단계에서는 이 기능을 사용할 수 없습니다");
+      return;
+    }
+
+    // 완료된 회고인 경우: 분석 페이지로 이동
+    if (completedItems[itemId] && itemTitle.includes("회고")) {
+      try {
+        const token = getAccessToken();
+        if (!token) {
+          alert("로그인이 필요합니다");
+          return;
+        }
+
+        // 완료된 회고 세션 찾기
+        const retrospects = await getRetrospects(applicationId.toString(), token);
+        const completedSession = retrospects.sessions?.find(
+          (session) => session.stage === stageName && session.ended_at
+        );
+
+        if (!completedSession) {
+          alert("회고 세션을 찾을 수 없습니다");
+          return;
+        }
+
+        // 분석 페이지로 이동
+        router.push(`/retrospective/${completedSession.session_id}/analysis`);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "분석 페이지 이동 실패");
+      }
+      return;
+    }
+
+    // 클릭한 항목을 완료된 기록에 추가
+    setCompletedItems((prev) => ({
+      ...prev,
+      [itemId]: true,
+    }));
+
     if (itemTitle === "예상 질문 추출하기") {
       router.push(`/applications/${applicationId}/extract-questions`);
     } else if (itemTitle.includes("연습")) {
       router.push(`/interview-practice?applicationId=${applicationId}`);
     } else if (itemTitle.includes("회고")) {
       router.push(`/retrospective?applicationId=${applicationId}`);
+    }
+  };
+
+  const handleEditStage = () => {
+    setShowEditModal(true);
+  };
+
+  const handleUpdateStage = () => {
+    setShowEditModal(false);
+    setShowPassModal(true);
+  };
+
+  const handlePassSelection = async (isPass: boolean) => {
+    setIsUpdating(true);
+
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        return;
+      }
+
+      let nextStage = displayStage;
+      let newStatus: "진행중" | "합격" | "탈락";
+
+      if (isPass) {
+        // 1. 현재 stage를 합격으로 설정
+        await updateStageResult(
+          applicationId.toString(),
+          {
+            stage: displayStage,
+            status: "합격",
+          },
+          token
+        );
+
+        // 2. 다음 stage를 진행중으로 설정
+        nextStage = NEXT_STAGE[displayStage] || displayStage;
+        newStatus = "진행중";
+      } else {
+        newStatus = "탈락";
+      }
+
+      await updateStageResult(
+        applicationId.toString(),
+        {
+          stage: nextStage,
+          status: newStatus,
+        },
+        token
+      );
+
+      // 최신 데이터 리로드
+      const updatedDetail = await getApplicationDetail(
+        applicationId.toString(),
+        token
+      );
+
+      // stages 업데이트
+      const newStages = ALL_STAGES.map((stageName, idx) => {
+        const timelineItem = updatedDetail.timeline.find(
+          (t) => t.stage === stageName
+        );
+
+        let status: "합격" | "탈락" | "진행중" | "대기" = "대기";
+        if (timelineItem?.status) {
+          const apiStatus = timelineItem.status.toUpperCase();
+          if (apiStatus === "합격") {
+            status = "합격";
+          } else if (apiStatus === "탈락") {
+            status = "탈락";
+          } else if (apiStatus.includes("진행")) {
+            status = "진행중";
+          }
+        }
+
+        return { id: idx + 1, name: stageName, status };
+      });
+
+      setStages(newStages);
+      setDisplayStage(updatedDetail.current_stage);
+      setDisplayStatus(updatedDetail.status);
+      setShowPassModal(false);
+    } catch (error) {
+      console.error("Failed to update stage:", error);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -300,10 +469,13 @@ export default function ApplicationDetailModal({
             <p className="text-white text-2xl font-bold">{company}</p>
             <p className="text-blue-100 text-lg mt-1">{position}</p>
           </div>
-          <div className="bg-white rounded-2xl px-6 py-3 flex flex-col items-center">
-            <p className="text-sm font-semibold text-gray-700">{displayStage}</p>
-            <p className="text-base font-bold text-[#034078]">{displayStatus}</p>
-          </div>
+          <button
+            onClick={handleEditStage}
+            disabled={stages.find((s) => s.name === currentStage)?.status === "탈락"}
+            className="bg-white text-gray-900 font-semibold px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer text-sm disabled:bg-gray-300 disabled:cursor-not-allowed disabled:text-gray-600"
+          >
+            진행 단계 수정
+          </button>
           <button
             onClick={onClose}
             className="absolute top-6 right-6 text-white text-2xl hover:text-gray-200"
@@ -380,68 +552,96 @@ export default function ApplicationDetailModal({
             <h3 className="text-lg font-bold text-gray-900 mb-6">기록하기</h3>
             <div className="flex flex-col gap-4 mb-8">
               {(() => {
-                const ongoingStage = stages.find((s) => s.status === "진행중");
-                if (!ongoingStage) return null;
-                const records =
-                  STAGE_RECORDS[ongoingStage.name]?.ongoing || [];
-                return records.map((item) => {
-                  const isDisabled =
-                    item.title.includes("연습") &&
-                    !completedItems["예상 질문 추출하기"];
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => !isDisabled && handleRecordItemClick(item.title)}
-                      disabled={isDisabled}
-                      className={`border rounded-xl p-4 transition-colors text-left ${
-                        isDisabled
-                          ? "bg-gray-100 border-gray-200 cursor-not-allowed opacity-50"
-                          : "bg-white border-gray-200 hover:bg-gray-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="font-semibold text-gray-900">{item.title}</p>
-                          <p className="text-sm text-gray-500 mt-1">{item.description}</p>
-                        </div>
-                        <span className="text-gray-400 text-xl">›</span>
-                      </div>
-                    </button>
-                  );
+                const activatedStages = getActivatedStages();
+                const recordsToShow: Array<{ stageName: string; item: RecordItem; isDisabled: boolean }> = [];
+
+                activatedStages.forEach((stageName) => {
+                  const records = STAGE_RECORDS[stageName]?.ongoing || [];
+                  records.forEach((item) => {
+                    if (!completedItems[item.id]) {
+                      const isDisabled = !isFeatureActive(stageName, item.title);
+                      recordsToShow.push({ stageName, item, isDisabled });
+                    }
+                  });
                 });
+
+                if (recordsToShow.length === 0) {
+                  return <p className="text-gray-500 text-sm">완료된 활동이 없습니다.</p>;
+                }
+
+                return recordsToShow.map(({ stageName, item, isDisabled }) => (
+                  <button
+                    key={item.id}
+                    onClick={() => !isDisabled && handleRecordItemClick(stageName, item.title, item.id)}
+                    disabled={isDisabled}
+                    className={`border rounded-xl p-4 transition-colors text-left ${
+                      isDisabled
+                        ? "bg-gray-100 border-gray-200 cursor-not-allowed opacity-50"
+                        : "bg-white border-gray-200 hover:bg-gray-50"
+                    }`}
+                    title={isDisabled ? "현재 단계에서는 이 기능을 사용할 수 없습니다" : ""}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">{stageName}</p>
+                        <p className="font-semibold text-gray-900">{item.title}</p>
+                        <p className="text-sm text-gray-500 mt-1">{item.description}</p>
+                      </div>
+                      <span className="text-gray-400 text-xl">›</span>
+                    </div>
+                  </button>
+                ));
               })()}
             </div>
 
             {/* Completed records section */}
             {(() => {
-              const completedStages = stages.filter((s) => s.status === "합격");
-              if (completedStages.length === 0) return null;
-              const lastCompletedStage = completedStages[completedStages.length - 1];
-              const records =
-                STAGE_RECORDS[lastCompletedStage.name]?.completed || [];
+              const activatedStages = getActivatedStages();
+              const completedRecordsToShow: Array<{ stageName: string; item: RecordItem; isDisabled: boolean }> = [];
+
+              activatedStages.forEach((stageName) => {
+                // STAGE_RECORDS의 completed에서 가져오기
+                const completedRecords = STAGE_RECORDS[stageName]?.completed || [];
+                completedRecords.forEach((item) => {
+                  if (completedItems[item.id]) {
+                    const isDisabled = !isFeatureActive(stageName, item.title);
+                    completedRecordsToShow.push({ stageName, item, isDisabled });
+                  }
+                });
+
+                // ongoing에서도 완료된 항목 찾기 (회고 같은 특수 항목)
+                const ongoingRecords = STAGE_RECORDS[stageName]?.ongoing || [];
+                ongoingRecords.forEach((item) => {
+                  if (completedItems[item.id]) {
+                    const isDisabled = !isFeatureActive(stageName, item.title);
+                    completedRecordsToShow.push({ stageName, item, isDisabled });
+                  }
+                });
+              });
+
+              if (completedRecordsToShow.length === 0) return null;
+
               return (
                 <>
                   <h3 className="text-lg font-bold text-gray-900 mb-4">완료된 기록</h3>
                   <div className="flex flex-col gap-4">
-                    {records.map((item) => {
-                      const isDisabled =
-                        item.title.includes("연습") &&
-                        !completedItems["예상 질문 추출하기"];
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() =>
-                            !isDisabled && handleRecordItemClick(item.title)
-                          }
-                          disabled={isDisabled}
-                          className={`border rounded-xl p-4 transition-colors text-left ${
+                    {completedRecordsToShow.map(({ stageName, item, isDisabled }) => (
+                      <button
+                        key={item.id}
+                        onClick={() =>
+                          !isDisabled && handleRecordItemClick(stageName, item.title, item.id)
+                        }
+                        disabled={isDisabled}
+                        className={`border rounded-xl p-4 transition-colors text-left ${
                             isDisabled
                               ? "bg-gray-100 border-gray-200 cursor-not-allowed opacity-50"
                               : "bg-white border-gray-200 hover:bg-gray-50"
                           }`}
+                          title={isDisabled ? "현재 단계에서는 이 기능을 사용할 수 없습니다" : ""}
                         >
                           <div className="flex items-center justify-between">
                             <div>
+                              <p className="text-xs text-gray-500 mb-1">{stageName}</p>
                               <p className="font-semibold text-gray-900">
                                 {item.title}
                               </p>
@@ -452,8 +652,8 @@ export default function ApplicationDetailModal({
                             <span className="text-gray-400 text-xl">›</span>
                           </div>
                         </button>
-                      );
-                    })}
+                      ))}
+
                   </div>
                 </>
               );
@@ -461,6 +661,77 @@ export default function ApplicationDetailModal({
           </div>
         </div>
       </div>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center px-6 z-[60]">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              {company}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              현재 단계: {displayStage}
+            </p>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <p className="text-sm text-gray-700">
+                다음 단계로 진행하려면 현재 단계를 완료로 표시해주세요.
+              </p>
+              <p className="text-xs text-gray-600 mt-2">
+                {displayStage} → {NEXT_STAGE[displayStage] || displayStage}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEditModal(false)}
+                disabled={isUpdating}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleUpdateStage}
+                disabled={isUpdating}
+                className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isUpdating ? "진행중..." : "완료 표시"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pass/Fail Modal */}
+      {showPassModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center px-6 z-[60]">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              {company}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              {displayStage} 결과를 선택해주세요
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => handlePassSelection(false)}
+                disabled={isUpdating}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                불합격
+              </button>
+              <button
+                onClick={() => handlePassSelection(true)}
+                disabled={isUpdating}
+                className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                합격
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
