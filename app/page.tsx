@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
-import { getApplications } from "@/lib/api";
+import { getApplications, updateStageResult, getApplicationDetail, getRetrospects } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface User {
@@ -19,7 +19,16 @@ interface Application {
   statusLine2: string;
   statusType: "progress" | "fail" | "pass";
   reviewed: boolean;
+  applicationId?: string;
 }
+
+const NEXT_STAGE: Record<string, string> = {
+  "서류전형": "코딩테스트",
+  "코딩테스트": "1차면접",
+  "1차면접": "2차면접",
+  "2차면접": "최종면접",
+  "최종면접": "결과확정",
+};
 
 const MOCK_APPLICATIONS: Application[] = [
   {
@@ -60,6 +69,11 @@ export default function Home() {
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [mounted, setMounted] = useState(false);
   const [applications, setApplications] = useState<Application[]>(MOCK_APPLICATIONS);
+  const [editingApp, setEditingApp] = useState<Application | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [selectedPass, setSelectedPass] = useState<"pass" | "fail" | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -83,18 +97,14 @@ export default function Home() {
 
         const response = await getApplications(token);
         const displayApps: Application[] = response.items.map((item) => {
-          // status 값에 따라 상태 표시
           let statusLine2: string;
           let statusType: "progress" | "fail" | "pass";
 
-          if (item.status === "COMPLETED") {
-            statusLine2 = "합격";
+          if (item.status === "완료") {
+            statusLine2 = "완료";
             statusType = "pass";
-          } else if (item.status === "PREPARING") {
-            statusLine2 = "준비중";
-            statusType = "fail";
           } else {
-            // IN_PROGRESS
+            // "진행중"
             statusLine2 = "진행중";
             statusType = "progress";
           }
@@ -105,7 +115,8 @@ export default function Home() {
             statusLine1: item.stage,
             statusLine2,
             statusType,
-            reviewed: false, // TODO: 실제 회고 완료 여부 확인
+            reviewed: false,
+            applicationId: item.application_id,
           };
         });
         setApplications(displayApps);
@@ -122,7 +133,6 @@ export default function Home() {
   }, [router]);
 
   const getNextAction = (app: Application) => {
-    // 회고가 완료되지 않았으면 회고하러 가기
     if (!app.reviewed && app.statusType === "progress") {
       return {
         title: app.company,
@@ -132,13 +142,118 @@ export default function Home() {
       };
     }
 
-    // 회고가 완료되었거나 상태가 진행 중이 아니면 다음 작업
     return {
       title: app.company,
       action: `예상 질문을 추출해볼까요?`,
       button: "예상 질문 추출하기",
       href: `/applications/${app.id}/extract-questions`,
     };
+  };
+
+  const handleEditStage = (app: Application, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingApp(app);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateStage = async () => {
+    if (!editingApp || !editingApp.applicationId) return;
+
+    setShowEditModal(false);
+    setShowPassModal(true);
+  };
+
+  const handlePassSelection = async (isPass: boolean) => {
+    if (!editingApp || !editingApp.applicationId) return;
+
+    setSelectedPass(isPass ? "pass" : "fail");
+    setIsUpdating(true);
+
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        alert("로그인이 필요합니다");
+        return;
+      }
+
+      let nextStage = editingApp.statusLine1;
+      let newStatus: "진행중" | "합격" | "탈락";
+
+      if (isPass) {
+        nextStage = NEXT_STAGE[editingApp.statusLine1] || editingApp.statusLine1;
+        newStatus = "진행중";
+      } else {
+        newStatus = "탈락";
+      }
+
+      await updateStageResult(
+        editingApp.applicationId,
+        {
+          stage: nextStage,
+          status: newStatus,
+        },
+        token
+      );
+
+      // UI 업데이트
+      setApplications((prev) =>
+        prev.map((app) => {
+          if (app.id === editingApp.id) {
+            return {
+              ...app,
+              statusLine1: nextStage,
+              statusLine2: isPass ? "진행중" : "탈락",
+              statusType: isPass ? "progress" : "fail",
+            };
+          }
+          return app;
+        })
+      );
+
+      alert("진행 단계가 업데이트되었습니다");
+      setShowPassModal(false);
+      setEditingApp(null);
+      setSelectedPass(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "업데이트 실패");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleModalClose = async () => {
+    if (selectedApp) {
+      try {
+        const token = getAccessToken();
+        if (!token) return;
+
+        // 회고 완료 여부 확인
+        const retrospects = await getRetrospects(selectedApp.id, token);
+        console.log("Retrospects:", retrospects);
+
+        // 완료된 회고가 있는지 확인 (ended_at이 있으면 완료됨)
+        const hasCompletedRetrospect = retrospects.sessions?.some(
+          (session) => session.ended_at
+        );
+
+        setApplications((prev) =>
+          prev.map((app) => {
+            if (app.id === selectedApp.id) {
+              console.log(`App ${selectedApp.id} hasCompletedRetrospect:`, hasCompletedRetrospect);
+              return {
+                ...app,
+                reviewed: hasCompletedRetrospect || false,
+              };
+            }
+            return app;
+          })
+        );
+      } catch (error) {
+        console.error("Failed to update application:", error);
+      }
+    }
+
+    setSelectedApp(null);
   };
 
   return (
@@ -232,13 +347,84 @@ export default function Home() {
       {selectedApp && (
         <ApplicationDetailModal
           isOpen={!!selectedApp}
-          onClose={() => setSelectedApp(null)}
+          onClose={handleModalClose}
           applicationId={selectedApp.id}
           company={selectedApp.company}
           position={selectedApp.company}
           currentStage={selectedApp.statusLine1}
           stageStatus={selectedApp.statusLine2}
         />
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && editingApp && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center px-6 z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              {editingApp.company}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              현재 단계: {editingApp.statusLine1}
+            </p>
+
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <p className="text-sm text-gray-700">
+                다음 단계로 진행하려면 현재 단계를 완료로 표시해주세요.
+              </p>
+              <p className="text-xs text-gray-600 mt-2">
+                {editingApp.statusLine1} → {NEXT_STAGE[editingApp.statusLine1] || editingApp.statusLine1}
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowEditModal(false)}
+                disabled={isUpdating}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleUpdateStage}
+                disabled={isUpdating}
+                className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isUpdating ? "진행중..." : "완료 표시"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Pass/Fail Modal */}
+      {showPassModal && editingApp && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center px-6 z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              {editingApp.company}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              {editingApp.statusLine1} 결과를 선택해주세요
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => handlePassSelection(false)}
+                disabled={isUpdating}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                불합격
+              </button>
+              <button
+                onClick={() => handlePassSelection(true)}
+                disabled={isUpdating}
+                className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                합격
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

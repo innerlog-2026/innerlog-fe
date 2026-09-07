@@ -31,6 +31,7 @@ export default function RetrospectivePage() {
   const [isSessionActive, setIsSessionActive] = useState(false);
   const [appInfo, setAppInfo] = useState<ApplicationInfo | null>(null);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isDone, setIsDone] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -133,6 +134,7 @@ export default function RetrospectivePage() {
 
       setMessages((prev) => [...prev, aiMessage]);
       setIsSessionActive(!response.is_done);
+      setIsDone(response.is_done);
     } catch (error) {
       console.error("Failed to send message:", error);
       const errorMessage: Message = {
@@ -232,31 +234,42 @@ export default function RetrospectivePage() {
         {/* Input area */}
         <div className="border-t border-gray-200 bg-white">
           <div className="max-w-2xl w-full mx-auto p-6">
-            <div className="flex gap-3">
-              <textarea
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
-                rows={3}
-                className="flex-1 bg-gray-100 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#034078] resize-none"
-                disabled={!isSessionActive}
-              />
+            {isDone ? (
+              // Analysis button when retrospect is done
               <button
-                onClick={handleSendMessage}
-                disabled={!inputValue.trim() || isSendingMessage || !isSessionActive}
-                className="bg-[#034078] hover:bg-[#023456] disabled:bg-gray-300 text-white font-semibold px-6 py-3 rounded-xl transition-colors self-end shrink-0 flex items-center justify-center min-w-24"
+                onClick={() => router.push(`/retrospective/${sessionId}/analysis`)}
+                className="w-full bg-[#034078] hover:bg-[#023456] text-white font-semibold py-3 rounded-xl transition-colors"
               >
-                {isSendingMessage ? (
-                  <>
-                    <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                    <span>전송 중</span>
-                  </>
-                ) : (
-                  "전송"
-                )}
+                분석내용 보기
               </button>
-            </div>
+            ) : (
+              // Chat input when retrospect is ongoing
+              <div className="flex gap-3">
+                <textarea
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyPress={handleKeyPress}
+                  placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
+                  rows={3}
+                  className="flex-1 bg-gray-100 rounded-xl px-4 py-3 text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#034078] resize-none"
+                  disabled={!isSessionActive}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!inputValue.trim() || isSendingMessage || !isSessionActive}
+                  className="bg-[#034078] hover:bg-[#023456] disabled:bg-gray-300 text-white font-semibold px-6 py-3 rounded-xl transition-colors self-end shrink-0 flex items-center justify-center min-w-24"
+                >
+                  {isSendingMessage ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                      <span>전송 중</span>
+                    </>
+                  ) : (
+                    "전송"
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </main>

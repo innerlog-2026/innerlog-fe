@@ -3,15 +3,23 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { createApplication } from "@/lib/api";
+import { createApplication, updateStageResult } from "@/lib/api";
 
 interface ApplicationData {
   company: string;
   position: string;
   date: string;
   stage: string;
-  status: string;
+  applicationStatus: "진행중" | "완료";
 }
+
+const NEXT_STAGE: Record<string, string> = {
+  "서류전형": "코딩테스트",
+  "코딩테스트": "1차면접",
+  "1차면접": "2차면접",
+  "2차면접": "최종면접",
+  "최종면접": "결과확정",
+};
 
 export default function AddApplicationPage() {
   const router = useRouter();
@@ -20,9 +28,11 @@ export default function AddApplicationPage() {
     position: "",
     date: "",
     stage: "서류전형",
-    status: "PREPARING",
+    applicationStatus: "진행중",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassModal, setShowPassModal] = useState(false);
+  const [selectedPass, setSelectedPass] = useState<"pass" | "fail" | null>(null);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -40,6 +50,22 @@ export default function AddApplicationPage() {
       return;
     }
 
+    if (formData.applicationStatus === "완료") {
+      setShowPassModal(true);
+      return;
+    }
+
+    await submitApplication();
+  };
+
+  const handlePassSelection = async (isPass: boolean) => {
+    setSelectedPass(isPass ? "pass" : "fail");
+    setTimeout(() => {
+      submitApplication();
+    }, 100);
+  };
+
+  const submitApplication = async () => {
     try {
       setIsLoading(true);
       const token = localStorage.getItem("access_token");
@@ -49,16 +75,53 @@ export default function AddApplicationPage() {
         return;
       }
 
-      await createApplication(
+      // 지원현황 생성
+      const appResponse = await createApplication(
         {
           company_name: formData.company,
           position: formData.position,
           date: formData.date,
           stage: formData.stage,
-          status: formData.status as "PREPARING" | "IN_PROGRESS" | "COMPLETED",
+          status: "진행중",
         },
         token
       );
+
+      // "완료" 상태일 때 단계 상태 설정
+      if (formData.applicationStatus === "완료") {
+        if (selectedPass === "pass") {
+          // 1. 현재 단계를 합격으로 설정
+          await updateStageResult(
+            appResponse.application_id,
+            {
+              stage: formData.stage,
+              status: "합격",
+            },
+            token
+          );
+
+          // 2. 다음 단계를 진행중으로 설정
+          const nextStage = NEXT_STAGE[formData.stage] || formData.stage;
+          await updateStageResult(
+            appResponse.application_id,
+            {
+              stage: nextStage,
+              status: "진행중",
+            },
+            token
+          );
+        } else {
+          // 불합격: 현재 단계를 탈락으로 설정
+          await updateStageResult(
+            appResponse.application_id,
+            {
+              stage: formData.stage,
+              status: "탈락",
+            },
+            token
+          );
+        }
+      }
 
       alert("지원이 추가되었습니다");
       router.push("/");
@@ -66,6 +129,8 @@ export default function AddApplicationPage() {
       alert(error instanceof Error ? error.message : "지원 추가 실패");
     } finally {
       setIsLoading(false);
+      setShowPassModal(false);
+      setSelectedPass(null);
     }
   };
 
@@ -75,7 +140,7 @@ export default function AddApplicationPage() {
       position: "",
       date: "",
       stage: "서류전형",
-      status: "PREPARING",
+      applicationStatus: "진행중",
     });
     router.back();
   };
@@ -160,14 +225,13 @@ export default function AddApplicationPage() {
                   상태
                 </label>
                 <select
-                  name="status"
-                  value={formData.status}
-                  onChange={handleChange}
+                  name="applicationStatus"
+                  value={formData.applicationStatus}
+                  onChange={(e) => setFormData({ ...formData, applicationStatus: e.target.value as "진행중" | "완료" })}
                   className="w-full bg-gray-100 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="PREPARING">준비 중</option>
-                  <option value="IN_PROGRESS">진행 중</option>
-                  <option value="COMPLETED">완료</option>
+                  <option value="진행중">진행 중</option>
+                  <option value="완료">완료</option>
                 </select>
               </div>
 
@@ -192,6 +256,37 @@ export default function AddApplicationPage() {
           </div>
         </div>
       </main>
+
+      {/* Pass/Fail Modal */}
+      {showPassModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center px-6 z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md">
+            <h2 className="text-lg font-bold text-gray-900 mb-2">
+              {formData.company} - {formData.stage}
+            </h2>
+            <p className="text-sm text-gray-600 mb-6">
+              합격 여부를 선택해주세요
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => handlePassSelection(false)}
+                disabled={isLoading}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                불합격
+              </button>
+              <button
+                onClick={() => handlePassSelection(true)}
+                disabled={isLoading}
+                className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                합격
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

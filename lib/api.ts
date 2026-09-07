@@ -1,5 +1,23 @@
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
+async function handleApiError(response: Response) {
+  if (response.status === 401) {
+    // 토큰 갱신 시도
+    const { refreshAccessToken } = await import("./auth");
+    const refreshed = await refreshAccessToken();
+
+    if (!refreshed) {
+      // 갱신 실패 시 로그인 페이지로 이동
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
+  }
+
+  const error = await response.json();
+  throw new Error(error.detail || error.message || "요청 실패");
+}
+
 interface TokenResponse {
   access_token: string;
   refresh_token: string;
@@ -73,7 +91,7 @@ interface ApplicationCreateRequest {
   position: string;
   stage?: string;
   date?: string;
-  status: "PREPARING" | "IN_PROGRESS" | "COMPLETED";
+  status: "진행중" | "완료";
 }
 
 interface ApplicationResponse {
@@ -124,7 +142,7 @@ interface ApplicationDetailResponse {
 
 interface StageResultUpdateRequest {
   stage: string;
-  status: string;
+  status: "진행중" | "합격" | "탈락";
 }
 
 interface StageResultResponse {
@@ -493,6 +511,42 @@ export async function getSpeechQuestions(
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.detail || "질문 목록 조회 실패");
+  }
+
+  return response.json();
+}
+
+interface SpeechAnalysisResponse {
+  submission_id: string;
+  question_id: string;
+  acoustic: Record<string, any>;
+  content: Record<string, any>;
+}
+
+export async function analyzeSpeech(
+  questionId: string,
+  audioFile: File,
+  access_token: string,
+  inputType: "RECORDING" | "UPLOAD" = "UPLOAD"
+): Promise<SpeechAnalysisResponse> {
+  const formData = new FormData();
+  formData.append("file", audioFile);
+  formData.append("input_type", inputType);
+
+  const response = await fetch(
+    `${API_BASE_URL}/speech-practices/questions/${questionId}/submissions`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${access_token}`,
+      },
+      body: formData,
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || "음성 분석 실패");
   }
 
   return response.json();

@@ -92,7 +92,7 @@ export default function InterviewPracticePage() {
                   {currentQuestions.map((item, idx) => (
                     <Link
                       key={item.id}
-                      href={`/interview-practice/${item.id}?applicationId=${applicationId}`}
+                      href={`/interview-practice/${item.id}?applicationId=${applicationId}&question=${encodeURIComponent(item.question)}`}
                     >
                       <div className="w-full border border-gray-200 rounded-xl bg-white hover:bg-gray-50 px-6 py-5 flex items-center justify-between cursor-pointer transition-colors">
                         <div className="flex items-center gap-4 flex-1">

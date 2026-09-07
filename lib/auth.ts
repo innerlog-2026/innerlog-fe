@@ -59,3 +59,27 @@ export function clearTokens() {
 export function isAuthenticated(): boolean {
   return getAccessToken() !== null;
 }
+
+export async function refreshAccessToken(): Promise<boolean> {
+  try {
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+
+    const response = await fetch(
+      `${typeof window !== "undefined" ? (window as any).__API_BASE_URL || "http://localhost:8000" : "http://localhost:8000"}/auth/refresh`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      }
+    );
+
+    if (!response.ok) return false;
+
+    const data = await response.json();
+    saveTokens(data.access_token, data.refresh_token);
+    return true;
+  } catch {
+    return false;
+  }
+}
