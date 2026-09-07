@@ -121,7 +121,7 @@ export default function AnalysisPage() {
                   const strengths = Array.isArray(analysis.analysis.strengths)
                     ? analysis.analysis.strengths
                     : typeof analysis.analysis.strengths === 'string'
-                    ? analysis.analysis.strengths.split('. ').filter((s) => s.trim())
+                    ? (analysis.analysis.strengths as string).split('. ').filter((s) => s.trim())
                     : [];
 
                   return strengths.length > 0 ? (
@@ -146,7 +146,7 @@ export default function AnalysisPage() {
                   const weaknesses = Array.isArray(analysis.analysis.weaknesses)
                     ? analysis.analysis.weaknesses
                     : typeof analysis.analysis.weaknesses === 'string'
-                    ? analysis.analysis.weaknesses.split('. ').filter((s) => s.trim())
+                    ? (analysis.analysis.weaknesses as string).split('. ').filter((s) => s.trim())
                     : [];
 
                   return weaknesses.length > 0 ? (
@@ -180,7 +180,7 @@ export default function AnalysisPage() {
                 const actions = Array.isArray(analysis.analysis.actions)
                   ? analysis.analysis.actions
                   : typeof analysis.analysis.actions === 'string'
-                  ? analysis.analysis.actions.split('. ').filter((s) => s.trim())
+                  ? (analysis.analysis.actions as string).split('. ').filter((s) => s.trim())
                   : [];
 
                 return actions.length > 0 ? (
