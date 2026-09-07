@@ -27,7 +27,7 @@ export default function AddApplicationModal({
     position: "",
     date: "",
     stage: "서류전형",
-    status: "PREPARING",
+    status: "진행중",
   });
   const [isLoading, setIsLoading] = useState(false);
 
@@ -62,7 +62,7 @@ export default function AddApplicationModal({
           position: formData.position,
           date: formData.date,
           stage: formData.stage,
-          status: (formData.status || "PREPARING") as "PREPARING" | "IN_PROGRESS" | "COMPLETED",
+          status: (formData.status || "진행중") as "진행중" | "완료",
         },
         token
       );
@@ -76,7 +76,7 @@ export default function AddApplicationModal({
         position: "",
         date: "",
         stage: "서류전형",
-        status: "PREPARING",
+        status: "진행중",
       });
       onClose();
     } catch (error) {

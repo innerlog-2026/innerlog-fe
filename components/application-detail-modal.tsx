@@ -389,17 +389,11 @@ export default function ApplicationDetailModal({
         return;
       }
 
-      const statusMap: Record<"진행중" | "합격" | "탈락", string> = {
-        "진행중": "IN_PROGRESS",
-        "합격": "PASS",
-        "탈락": "FAIL",
-      };
-
       await updateStageResult(
         applicationId.toString(),
         {
           stage: clickedStage,
-          status: statusMap[nextStatus],
+          status: nextStatus,
         },
         token
       );
