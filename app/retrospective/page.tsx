@@ -52,17 +52,19 @@ export default function RetrospectivePage() {
         }
 
         const appDetail = await getApplicationDetail(applicationId, token);
+        // current_stage 는 아직 어느 단계에도 도달하지 않았으면 null 이다.
+        const stage = appDetail.current_stage ?? "";
         setAppInfo({
           company_name: appDetail.company_name,
           position: appDetail.position,
-          stage: appDetail.current_stage,
+          stage,
         });
 
         const response = await startRetrospect(
           {
             application_id: applicationId,
             level: "MEDIUM_HIGH",
-            memo: `${appDetail.company_name} ${appDetail.position} - ${appDetail.current_stage} 면접 회고`,
+            memo: `${appDetail.company_name} ${appDetail.position} - ${stage} 면접 회고`,
           },
           token
         );

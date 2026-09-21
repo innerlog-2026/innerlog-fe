@@ -44,6 +44,19 @@ export default function ExtractQuestionsPage() {
           applicationId.toString(),
           token
         );
+
+        // 이미 질문이 생성돼 있으면 다시 POST 할 수 없으므로(서버가 409) 질문 목록으로 보낸다.
+        // 홈 카드·상세 모달·주소 직접 입력 등 이 페이지로 들어오는 모든 경로를 여기서 한 번에 막는다.
+        if (response.speech_practice_created) {
+          router.replace(`/interview-practice?applicationId=${applicationId}`);
+          return;
+        }
+
+        if (!response.speech_practice_available) {
+          setError("현재 전형 단계에서는 예상 질문을 추출할 수 없습니다");
+          return;
+        }
+
         setApplicationData({
           company_name: response.company_name,
           position: response.position,
@@ -123,6 +136,26 @@ export default function ExtractQuestionsPage() {
       setIsLoading(false);
     }
   };
+
+  if (!applicationData && !isLoading && error) {
+    return (
+      <div className="flex-1 flex flex-col bg-white">
+        <TopBar />
+        <main className="flex-1 flex justify-center items-center py-12 px-6">
+          <div role="alert" className="max-w-md text-center">
+            <p className="text-base font-medium text-[#B23B32]">{error}</p>
+            <button
+              type="button"
+              onClick={() => router.push("/")}
+              className="mt-3 text-sm font-medium text-[#034078] underline"
+            >
+              홈으로
+            </button>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   if (!applicationData) {
     return (

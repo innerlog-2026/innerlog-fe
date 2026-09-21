@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import { createApplication, updateStageResult } from "@/lib/api";
+import { buildStageResult } from "@/lib/stage";
 
 interface ApplicationData {
   company: string;
@@ -12,14 +13,6 @@ interface ApplicationData {
   stage: string;
   applicationStatus: "진행중" | "완료";
 }
-
-const NEXT_STAGE: Record<string, string> = {
-  "서류전형": "코딩테스트",
-  "코딩테스트": "1차면접",
-  "1차면접": "2차면접",
-  "2차면접": "최종면접",
-  "최종면접": "결과확정",
-};
 
 export default function AddApplicationPage() {
   const router = useRouter();
@@ -32,7 +25,6 @@ export default function AddApplicationPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
-  const [selectedPass, setSelectedPass] = useState<"pass" | "fail" | null>(null);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -59,13 +51,11 @@ export default function AddApplicationPage() {
   };
 
   const handlePassSelection = async (isPass: boolean) => {
-    setSelectedPass(isPass ? "pass" : "fail");
-    setTimeout(() => {
-      submitApplication();
-    }, 100);
+    // 상태 갱신은 비동기라 다음 렌더에야 반영되므로, 결과를 인자로 직접 넘긴다
+    await submitApplication(isPass ? "pass" : "fail");
   };
 
-  const submitApplication = async () => {
+  const submitApplication = async (passResult: "pass" | "fail" | null = null) => {
     try {
       setIsLoading(true);
       const token = localStorage.getItem("access_token");
@@ -87,40 +77,13 @@ export default function AddApplicationPage() {
         token
       );
 
-      // "완료" 상태일 때 단계 상태 설정
-      if (formData.applicationStatus === "완료") {
-        if (selectedPass === "pass") {
-          // 1. 현재 단계를 합격으로 설정
-          await updateStageResult(
-            appResponse.application_id,
-            {
-              stage: formData.stage,
-              status: "합격",
-            },
-            token
-          );
-
-          // 2. 다음 단계를 진행중으로 설정
-          const nextStage = NEXT_STAGE[formData.stage] || formData.stage;
-          await updateStageResult(
-            appResponse.application_id,
-            {
-              stage: nextStage,
-              status: "진행중",
-            },
-            token
-          );
-        } else {
-          // 불합격: 현재 단계를 탈락으로 설정
-          await updateStageResult(
-            appResponse.application_id,
-            {
-              stage: formData.stage,
-              status: "탈락",
-            },
-            token
-          );
-        }
+      // "완료"로 생성했다면 선택한 합격/불합격을 단계 결과로 반영한다
+      if (formData.applicationStatus === "완료" && passResult !== null) {
+        await updateStageResult(
+          appResponse.application_id,
+          buildStageResult(formData.stage, passResult === "pass"),
+          token
+        );
       }
 
       alert("지원이 추가되었습니다");
@@ -130,7 +93,6 @@ export default function AddApplicationPage() {
     } finally {
       setIsLoading(false);
       setShowPassModal(false);
-      setSelectedPass(null);
     }
   };
 
