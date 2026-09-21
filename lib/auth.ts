@@ -1,3 +1,5 @@
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
 const ACCESS_TOKEN_KEY = "access_token";
 const REFRESH_TOKEN_KEY = "refresh_token";
 const USER_KEY = "innerlog_user";
@@ -60,26 +62,41 @@ export function isAuthenticated(): boolean {
   return getAccessToken() !== null;
 }
 
-export async function refreshAccessToken(): Promise<boolean> {
+let refreshPromise: Promise<boolean> | null = null;
+
+async function requestRefresh(): Promise<boolean> {
   try {
     const refreshToken = getRefreshToken();
     if (!refreshToken) return false;
 
-    const response = await fetch(
-      `${typeof window !== "undefined" ? (window as any).__API_BASE_URL || "http://localhost:8000" : "http://localhost:8000"}/auth/refresh`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      }
-    );
+    const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
 
     if (!response.ok) return false;
 
     const data = await response.json();
+    if (!data.access_token || !data.refresh_token) return false;
+
     saveTokens(data.access_token, data.refresh_token);
     return true;
   } catch {
+    // 네트워크 장애 등으로 갱신 자체가 불가능한 경우
     return false;
   }
+}
+
+/**
+ * 액세스 토큰을 갱신한다.
+ * 여러 요청이 동시에 401을 받아도 갱신 요청은 한 번만 나가도록 in-flight 프라미스를 공유한다.
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+  if (!refreshPromise) {
+    refreshPromise = requestRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+  return refreshPromise;
 }

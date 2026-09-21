@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { getApplications, getRetrospects } from "@/lib/api";
+import { getApplications, getRetrospects, NetworkError } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface User {
@@ -52,6 +52,7 @@ export default function Dashboard() {
     negative: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadDashboardData = async () => {
@@ -168,6 +169,14 @@ export default function Dashboard() {
         setLoading(false);
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
+        // 401(세션 만료)은 lib/api.ts에서 갱신 시도 후 로그인 페이지로 보낸다.
+        setLoadError(
+          error instanceof NetworkError
+            ? error.message
+            : error instanceof Error
+            ? error.message
+            : "대시보드 데이터를 불러오지 못했습니다."
+        );
         setLoading(false);
       }
     };
@@ -193,6 +202,26 @@ export default function Dashboard() {
         <TopBar />
         <main className="flex-1 flex justify-center items-center py-12 px-6 bg-gray-50">
           <p className="text-gray-500">데이터를 불러오는 중...</p>
+        </main>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex-1 flex flex-col bg-white">
+        <TopBar />
+        <main className="flex-1 flex justify-center items-center py-12 px-6 bg-gray-50">
+          <div role="alert" className="max-w-md text-center">
+            <p className="text-base font-medium text-[#B23B32]">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-3 text-sm font-medium text-[#034078] underline"
+            >
+              다시 시도
+            </button>
+          </div>
         </main>
       </div>
     );

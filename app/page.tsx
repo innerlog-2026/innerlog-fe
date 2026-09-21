@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
-import { getApplications, updateStageResult, getApplicationDetail, getRetrospects } from "@/lib/api";
+import { getApplications, updateStageResult, getApplicationDetail, getRetrospects, NetworkError } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
+import { buildStageResult, getNextStageLabel } from "@/lib/stage";
 
 interface User {
   name: string;
@@ -21,14 +22,6 @@ interface Application {
   reviewed: boolean;
   applicationId?: string;
 }
-
-const NEXT_STAGE: Record<string, string> = {
-  "서류전형": "코딩테스트",
-  "코딩테스트": "1차면접",
-  "1차면접": "2차면접",
-  "2차면접": "최종면접",
-  "최종면접": "결과확정",
-};
 
 const MOCK_APPLICATIONS: Application[] = [
   {
@@ -74,6 +67,7 @@ export default function Home() {
   const [showPassModal, setShowPassModal] = useState(false);
   const [selectedPass, setSelectedPass] = useState<"pass" | "fail" | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -122,10 +116,15 @@ export default function Home() {
         setApplications(displayApps);
       } catch (error) {
         console.error("Failed to load applications:", error);
-        // 토큰 오류면 로그인 페이지로
-        if (error instanceof Error && error.message.includes("401")) {
-          router.push("/login");
-        }
+        // 401(세션 만료)은 lib/api.ts에서 토큰 갱신을 시도하고,
+        // 갱신까지 실패하면 로그인 페이지로 보내므로 여기서는 안내만 한다.
+        setLoadError(
+          error instanceof NetworkError
+            ? error.message
+            : error instanceof Error
+            ? error.message
+            : "지원 목록을 불러오지 못했습니다."
+        );
       }
     };
 
@@ -163,10 +162,10 @@ export default function Home() {
     setShowPassModal(true);
   };
 
-  const handlePassSelection = async (isPass: boolean) => {
+  const handlePassSelection = async (selectedResult: "합격" | "탈락") => {
     if (!editingApp || !editingApp.applicationId) return;
 
-    setSelectedPass(isPass ? "pass" : "fail");
+    setSelectedPass(selectedResult === "합격" ? "pass" : "fail");
     setIsUpdating(true);
 
     try {
@@ -176,38 +175,28 @@ export default function Home() {
         return;
       }
 
-      let nextStage = editingApp.statusLine1;
-      let newStatus: "진행중" | "합격" | "탈락";
+      const currentStage = editingApp.statusLine1;
+      const result = buildStageResult(currentStage, selectedResult === "합격");
 
-      if (isPass) {
-        nextStage = NEXT_STAGE[editingApp.statusLine1] || editingApp.statusLine1;
-        newStatus = "진행중";
-      } else {
-        newStatus = "탈락";
-      }
+      await updateStageResult(editingApp.applicationId, result, token);
 
-      await updateStageResult(
-        editingApp.applicationId,
-        {
-          stage: nextStage,
-          status: newStatus,
-        },
-        token
-      );
-
-      // UI 업데이트
+      // 요청한 단계/상태가 곧 갱신된 현재 단계다
       setApplications((prev) =>
-        prev.map((app) => {
-          if (app.id === editingApp.id) {
-            return {
-              ...app,
-              statusLine1: nextStage,
-              statusLine2: isPass ? "진행중" : "탈락",
-              statusType: isPass ? "progress" : "fail",
-            };
-          }
-          return app;
-        })
+        prev.map((app) =>
+          app.id === editingApp.id
+            ? {
+                ...app,
+                statusLine1: result.stage,
+                statusLine2: result.status,
+                statusType:
+                  result.status === "탈락"
+                    ? "fail"
+                    : result.status === "합격"
+                    ? "pass"
+                    : "progress",
+              }
+            : app
+        )
       );
 
       alert("진행 단계가 업데이트되었습니다");
@@ -262,6 +251,23 @@ export default function Home() {
       <main className="flex-1 flex justify-center py-12 px-6">
         <div className="w-full max-w-4xl">
           <div className="flex flex-col gap-6">
+            {/* 데이터 로드 실패 안내 */}
+            {loadError && (
+              <div
+                role="alert"
+                className="rounded-lg border border-[#EE6055] bg-[#FDECEA] px-4 py-3"
+              >
+                <p className="text-sm font-medium text-[#B23B32]">{loadError}</p>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="mt-2 text-sm font-medium text-[#034078] underline"
+                >
+                  다시 시도
+                </button>
+              </div>
+            )}
+
             {/* Greeting */}
             <div className="pt-4">
               <p className="text-2xl font-bold text-gray-900">
@@ -372,7 +378,7 @@ export default function Home() {
                 다음 단계로 진행하려면 현재 단계를 완료로 표시해주세요.
               </p>
               <p className="text-xs text-gray-600 mt-2">
-                {editingApp.statusLine1} → {NEXT_STAGE[editingApp.statusLine1] || editingApp.statusLine1}
+                {editingApp.statusLine1} → {getNextStageLabel(editingApp.statusLine1)}
               </p>
             </div>
 
@@ -409,18 +415,18 @@ export default function Home() {
 
             <div className="flex gap-3">
               <button
-                onClick={() => handlePassSelection(false)}
-                disabled={isUpdating}
-                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                불합격
-              </button>
-              <button
-                onClick={() => handlePassSelection(true)}
+                onClick={() => handlePassSelection("합격")}
                 disabled={isUpdating}
                 className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 합격
+              </button>
+              <button
+                onClick={() => handlePassSelection("탈락")}
+                disabled={isUpdating}
+                className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                불합격
               </button>
             </div>
           </div>
