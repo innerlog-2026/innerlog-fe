@@ -181,12 +181,36 @@ export async function refreshTokens(
 // 지원(applications)
 // ---------------------------------------------------------------------------
 
+/**
+ * 지원 현황의 진행 상태(ApplicationStatusEnum).
+ *
+ * 서버 배포본과 로컬 백엔드가 이 enum 의 값 표기를 다르게 쓰고 있다
+ * (배포: "IN_PROGRESS"/"COMPLETED", 로컬: "진행중"/"완료").
+ * 읽을 때는 양쪽을 모두 받아들이고, 쓸 때는 보내지 않는다 — 아래 주석 참고.
+ */
+export type ApplicationStatus =
+  | "진행중"
+  | "완료"
+  | "IN_PROGRESS"
+  | "COMPLETED";
+
+/** 지원 현황이 "완료" 상태인지. 두 표기를 모두 인식한다. */
+export function isApplicationCompleted(status: string | null | undefined): boolean {
+  return status === "완료" || status === "COMPLETED";
+}
+
 interface ApplicationCreateRequest {
   company_name: string;
   position: string;
   stage?: string;
   date?: string;
-  status: "진행중" | "완료";
+  /**
+   * 보내지 않는 것을 권장한다. 서버에서 선택 항목이고 기본값이 "진행중 / IN_PROGRESS"
+   * 인데, 값 표기가 서버마다 달라 직접 보내면 한쪽에서 422 가 난다.
+   * 생성 후 상태 변경은 PATCH /applications/{id}/stage-result 를 쓴다
+   * (이쪽은 StageStatusEnum 이라 양쪽 서버가 동일하다).
+   */
+  status?: ApplicationStatus;
 }
 
 interface ApplicationResponse {
@@ -202,7 +226,8 @@ interface ApplicationListItem {
   company_name: string;
   position: string;
   stage: string;
-  status: string;
+  /** 표기가 서버마다 다르다. 비교는 isApplicationCompleted() 로 한다. */
+  status: ApplicationStatus;
   created_at: string;
 }
 
@@ -467,11 +492,82 @@ interface SpeechQuestionsResponse {
   questions: SpeechQuestionItem[];
 }
 
-interface SpeechAnalysisResponse {
+export interface AcousticResult {
+  /** 발화 속도 (어절/분) */
+  speed_wpm: number | null;
+  /** 속도에 대한 서술 (예: "평균(90.14어절/분)보다 느린 편이에요") */
+  speed_label: string | null;
+  /** 채움말별 횟수 */
+  filler_words: Record<string, number>;
+  /** 1.5초 이상 침묵 구간 수 */
+  silence_count: number | null;
+  duration_sec: number | null;
+  word_count: number | null;
+}
+
+/** STAR 요소 1개. 비행동형 질문이면 두 필드 모두 null 로 온다. */
+export interface StarItem {
+  present: boolean | null;
+  comment: string | null;
+}
+
+export interface StarScore {
+  situation: StarItem | null;
+  task: StarItem | null;
+  action: StarItem | null;
+  result: StarItem | null;
+}
+
+export interface Coherence {
+  summary: string | null;
+  detail: string | null;
+}
+
+export interface NegativeReframe {
+  detected: boolean;
+  expressions: string[];
+  feedback: string | null;
+}
+
+export interface ContentResult {
+  /** 행동형 / 의견형 / 기술형 / 가정형 */
+  question_type: string | null;
+  /** 비행동형 질문이면 4개 항목이 모두 {present: null, comment: null} */
+  star_score: StarScore | null;
+  coherence: Coherence;
+  /** 4회 이상 반복된 키워드 */
+  keyword_repeat: Record<string, number>;
+  negative_reframe: NegativeReframe;
+  /** @deprecated feedback.overall 로 이동. 과도기 동안만 채워진다. */
+  overall?: string | null;
+}
+
+export interface FeedbackResult {
+  /** STAR 전체 총평. 비행동형이면 null */
+  star_overall: string | null;
+  coherence_detail: string | null;
+  overall: string | null;
+}
+
+/**
+ * STAR 구조 분석이 실제로 수행됐는지.
+ * 비행동형 질문이면 4개 항목이 모두 {present: null, comment: null} 로 오므로
+ * 이 경우 STAR 섹션 대신 다른 안내를 보여줘야 한다.
+ */
+export function hasStarAnalysis(content: ContentResult): boolean {
+  const star = content.star_score;
+  if (!star) return false;
+  return (["situation", "task", "action", "result"] as const).some(
+    (key) => star[key]?.present !== null && star[key]?.present !== undefined
+  );
+}
+
+export interface SpeechAnalysisResponse {
   submission_id: string;
   question_id: string;
-  acoustic: Record<string, any>;
-  content: Record<string, any>;
+  acoustic: AcousticResult;
+  content: ContentResult;
+  feedback: FeedbackResult;
 }
 
 export async function createSpeechPractice(

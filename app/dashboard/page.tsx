@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { getApplications, getRetrospects, NetworkError } from "@/lib/api";
+import { getApplications, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface User {
@@ -107,7 +107,7 @@ export default function Dashboard() {
               stageCountMap[app.stage].total += 1;
 
               // 합격 상태인 경우
-              if (app.status === "COMPLETED") {
+              if (isApplicationCompleted(app.status)) {
                 stageCountMap[app.stage].passed += 1;
               }
             }
