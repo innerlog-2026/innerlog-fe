@@ -62,7 +62,7 @@ export default function AddApplicationModal({
           position: formData.position,
           date: formData.date,
           stage: formData.stage,
-          status: (formData.status || "진행중") as "진행중" | "완료",
+          // status 는 보내지 않는다 (서버 기본값 사용) — lib/api.ts 주석 참고.
         },
         token
       );

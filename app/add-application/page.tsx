@@ -72,7 +72,8 @@ export default function AddApplicationPage() {
           position: formData.position,
           date: formData.date,
           stage: formData.stage,
-          status: "진행중",
+          // status 는 보내지 않는다. 서버 기본값이 "진행중"이고, 값 표기가
+          // 서버마다 달라(진행중 / IN_PROGRESS) 직접 보내면 한쪽에서 422 가 난다.
         },
         token
       );

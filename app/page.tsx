@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
-import { getApplications, updateStageResult, getApplicationDetail, getRetrospects, NetworkError } from "@/lib/api";
+import { getApplications, updateStageResult, getApplicationDetail, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { buildStageResult, getNextStageLabel } from "@/lib/stage";
 
@@ -94,7 +94,7 @@ export default function Home() {
           let statusLine2: string;
           let statusType: "progress" | "fail" | "pass";
 
-          if (item.status === "완료") {
+          if (isApplicationCompleted(item.status)) {
             statusLine2 = "완료";
             statusType = "pass";
           } else {
