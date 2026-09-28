@@ -221,7 +221,7 @@ interface ApplicationResponse {
   status: string;
 }
 
-interface ApplicationListItem {
+export interface ApplicationListItem {
   application_id: string;
   company_name: string;
   position: string;
@@ -231,7 +231,7 @@ interface ApplicationListItem {
   created_at: string;
 }
 
-interface ApplicationListResponse {
+export interface ApplicationListResponse {
   items: ApplicationListItem[];
   page: number;
   size: number;
@@ -308,6 +308,30 @@ export async function getApplications(
   });
 }
 
+/**
+ * 지원 목록 전체를 가져온다 (서버 페이지 크기는 5라 한 번의 호출로는 일부만 온다).
+ *
+ * 대시보드 집계처럼 "전체"가 필요한 곳에서 1페이지만 읽으면 지원 10건이 5건으로
+ * 보이는 문제가 생긴다. has_next 를 따라가며 모두 모은다.
+ */
+export async function getAllApplications(
+  access_token: string
+): Promise<{ items: ApplicationListItem[]; totalCount: number }> {
+  const first = await getApplications(access_token, 1);
+  const items = [...first.items];
+
+  // total_pages 를 신뢰하되, 값이 없거나 0이면 has_next 로 멈춘다.
+  const lastPage = first.total_pages || (first.has_next ? Infinity : 1);
+  for (let page = 2; page <= lastPage; page += 1) {
+    const next = await getApplications(access_token, page);
+    items.push(...next.items);
+    if (!next.has_next) break;
+  }
+
+  // 서버가 total_count 를 안 주면 모은 개수로 대체한다.
+  return { items, totalCount: first.total_count ?? items.length };
+}
+
 export async function getApplicationDetail(
   application_id: string,
   access_token: string
@@ -338,8 +362,17 @@ export async function updateStageResult(
 // 회고(retrospects)
 // ---------------------------------------------------------------------------
 
+/** 회고 대상 면접 단계. 서버 SessionTypeEnum 과 문자열이 같다. */
+export type RetrospectType = "1차면접" | "2차면접" | "최종면접";
+
 interface RetrospectStartRequest {
   application_id: string;
+  /**
+   * 회고할 면접 단계. 생략하면 서버가 "현재 전형 단계"로 정해버리므로
+   * (예: 2차면접 진행중이면 1차 회고를 눌러도 2차 회고가 열린다)
+   * 호출부에서 반드시 명시한다.
+   */
+  type?: RetrospectType;
   level: "HARD" | "MEDIUM_HIGH" | "MEDIUM_LOW" | "EASY";
   memo?: string;
 }
@@ -365,16 +398,26 @@ interface RetrospectChatResponse {
   is_done: boolean;
 }
 
-interface RetrospectListResponse {
+export interface RetrospectSessionItem {
+  session_id: string;
+  /** 회고 대상 면접 단계 ("1차면접" 등). 대화 진행 단계인 stage 와 혼동하지 말 것. */
+  type: string;
+  /** 대화 진행 단계 (FACT / INTERPRETATION / STRATEGY / DONE) */
+  stage: string;
+  /** IN_PROGRESS / COMPLETED / ABANDONED */
+  status: string;
+  started_at: string;
+  ended_at?: string;
+}
+
+export interface RetrospectListResponse {
   application_id: string;
-  sessions: Array<{
-    session_id: string;
-    type: string;
-    stage: string;
-    status: string;
-    started_at: string;
-    ended_at?: string;
-  }>;
+  sessions: RetrospectSessionItem[];
+}
+
+/** 회고 세션이 끝났는지(요약까지 생성됐는지). */
+export function isRetrospectFinished(session: RetrospectSessionItem): boolean {
+  return session.status === "COMPLETED" || Boolean(session.ended_at);
 }
 
 interface InterviewAnalysis {
@@ -394,13 +437,14 @@ interface RetrospectSummaryResponse {
   analysis: InterviewAnalysis;
 }
 
-interface ChatMessage {
-  sender: "user" | "ai";
+export interface ChatMessage {
+  /** 서버는 "AI" / "USER" 로 내려준다. 과거 표기도 있어 양쪽을 모두 받는다. */
+  sender: "user" | "ai" | "USER" | "AI";
   message: string;
   sequence: number;
 }
 
-interface RetrospectDetailResponse {
+export interface RetrospectDetailResponse {
   session_id: string;
   application_id: string;
   type: string;

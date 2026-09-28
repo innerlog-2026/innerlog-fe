@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { getApplications, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
+import { getAllApplications, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface User {
@@ -72,11 +72,11 @@ export default function Dashboard() {
           }
         }
 
-        const appResponse = await getApplications(token);
-        const applications = appResponse.items;
+        // 서버 페이지 크기가 5라서 1페이지만 읽으면 지원 10건이 5건으로 집계된다.
+        const { items: applications, totalCount } = await getAllApplications(token);
 
-        // 1. 지원 횟수 계산
-        const totalApplications = applications.length;
+        // 1. 지원 횟수 — 서버가 세어준 전체 건수를 쓴다.
+        const totalApplications = totalCount;
 
         // 2. 전형 단계별 합격 현황 수집 & 회고 데이터 수집
         const stageCountMap: Record<string, { passed: number; total: number }> = {};
@@ -117,11 +117,18 @@ export default function Dashboard() {
         }
 
         // 3. 통계 업데이트
+        // "많이 막히는 단계" = 가장 많은 지원이 머물러 있는 전형 단계.
+        // (기존에는 첫 지원의 단계를 그대로 보여주고 있어 값에 의미가 없었다)
+        const stuckStage =
+          Object.entries(stageCountMap).sort(
+            (a, b) => b[1].total - a[1].total
+          )[0]?.[0] ?? "-";
+
         setStats([
           { label: "지원 횟수", value: totalApplications },
           { label: "완료된 회고", value: completedRetrospects },
           { label: "자기비난 감지", value: totalSelfBlame },
-          { label: "많이 막히는 단계", value: applications[0]?.stage || "-" },
+          { label: "많이 막히는 단계", value: stuckStage },
         ]);
 
         // 4. 전형 단계별 합격 현황
@@ -280,7 +287,9 @@ export default function Dashboard() {
               {/* Stage progress section */}
               <div className="bg-white rounded-2xl border border-gray-200 p-6">
                 <h3 className="text-lg font-bold text-gray-900 mb-2">전형 단계별 합격 현황</h3>
-                <p className="text-sm text-gray-500 mb-5">7일 스티키 노트 평균</p>
+                <p className="text-sm text-gray-500 mb-5">
+                  단계별로 지원이 얼마나 통과했는지 보여줘요
+                </p>
                 <div className="flex flex-col gap-4">
                   {stageProgress.map((stage, idx) => {
                     const percentage = (stage.count / stage.total) * 100;
@@ -310,7 +319,9 @@ export default function Dashboard() {
             {/* Emotion tone section */}
             <div className="bg-white rounded-2xl border border-gray-200 p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-2">전체 회고 평균 감정톤</h3>
-              <p className="text-sm text-gray-500 mb-5">7일 스티키 노트 평균</p>
+              <p className="text-sm text-gray-500 mb-5">
+                완료한 회고 전체의 감정 톤 평균이에요
+              </p>
 
               {emotionData.neutral !== 0 || emotionData.positive !== 0 || emotionData.negative !== 0 ? (
                 <>

@@ -63,3 +63,33 @@ export function getNextStageLabel(stage: string): string {
   if (stage === FINAL_STAGE) return "결과확정";
   return getNextStage(stage) ?? stage;
 }
+
+/**
+ * 회고가 가능한 면접 단계. 서버 SessionTypeEnum 의 값과 문자열이 같으므로
+ * 그대로 회고 type 으로 넘길 수 있다.
+ */
+export const INTERVIEW_STAGES = ["1차면접", "2차면접", "최종면접"] as const;
+
+export type InterviewStage = (typeof INTERVIEW_STAGES)[number];
+
+export function isInterviewStage(stage: string): stage is InterviewStage {
+  return (INTERVIEW_STAGES as readonly string[]).includes(stage);
+}
+
+/**
+ * 해당 면접 단계의 회고를 시작할 수 있는지.
+ *
+ * 서버 기준(available_retrospect_types)은 "현재 전형 단계까지 도달한 면접 단계면
+ * 상태와 무관하게 모두 허용"이다. 화면에서 더 좁게(합격/탈락인 단계만) 막으면
+ * 2차면접 진행중일 때 2차 회고 버튼이 잠겨버린다.
+ */
+export function isRetrospectReachable(
+  interviewStage: InterviewStage,
+  currentStage: string | null | undefined
+): boolean {
+  if (!currentStage) return false;
+  const currentIdx = ALL_STAGES.indexOf(currentStage as (typeof ALL_STAGES)[number]);
+  const targetIdx = ALL_STAGES.indexOf(interviewStage);
+  if (currentIdx === -1 || targetIdx === -1) return false;
+  return targetIdx <= currentIdx;
+}

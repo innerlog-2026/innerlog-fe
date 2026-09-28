@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import TopBar from "@/components/topbar";
@@ -9,9 +9,22 @@ import { getAccessToken } from "@/lib/auth";
 import { encodeRecordingToWav, validateAudioFile } from "@/lib/audio";
 import { saveSpeechAnalysis } from "@/lib/speech-analysis-store";
 
-/** 제출 실패 원인을 사용자가 할 수 있는 행동으로 바꿔 설명한다. */
-function describeSubmitError(error: unknown): string {
-  if (error instanceof NetworkError) return error.message;
+/** 분석이 이 시간을 넘기면 "느린 것"이지 "끊긴 것"이 아니라고 본다. */
+const SLOW_ANALYSIS_SEC = 45;
+
+/**
+ * 제출 실패 원인을 사용자가 할 수 있는 행동으로 바꿔 설명한다.
+ *
+ * @param elapsedSec 제출 버튼을 누른 뒤 실패까지 걸린 시간. 같은 NetworkError 라도
+ *   1초 만에 난 것("서버가 안 떠 있다")과 2분 만에 난 것("분석이 너무 오래 걸렸다")은
+ *   사용자가 해야 할 행동이 다르다.
+ */
+function describeSubmitError(error: unknown, elapsedSec: number): string {
+  if (error instanceof NetworkError) {
+    return elapsedSec >= SLOW_ANALYSIS_SEC
+      ? "분석이 오래 걸려 연결이 끊겼어요. 녹음을 30초 내외로 줄여서 다시 시도해주세요."
+      : error.message;
+  }
 
   if (error instanceof ApiError) {
     switch (error.status) {
@@ -20,9 +33,10 @@ function describeSubmitError(error: unknown): string {
         return "녹음이 너무 길어 업로드가 거부됐어요. 30초 이내로 짧게 녹음해 보시고, 계속 실패하면 담당자에게 알려주세요.";
       case 400:
         return "MP3 또는 WAV 파일만 올릴 수 있어요.";
+      case 504:
+        return "분석이 제한 시간 안에 끝나지 않았어요. 녹음을 조금 짧게 줄여서 다시 시도해주세요.";
       case 502:
       case 503:
-      case 504:
         return "분석 서버가 응답하지 않아요. 잠시 후 다시 시도해주세요.";
       default:
         return error.message;
@@ -44,11 +58,19 @@ export default function SpeechPracticePage() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // 분석은 길면 1분 넘게 걸린다. 멈춘 게 아니라는 걸 보여주려고 경과 시간을 센다.
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [isPreparing, setIsPreparing] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!isSubmitting) return;
+    const id = setInterval(() => setElapsedSec((prev) => prev + 1), 1000);
+    return () => clearInterval(id);
+  }, [isSubmitting]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -141,7 +163,9 @@ export default function SpeechPracticePage() {
     }
 
     setFileError(null);
+    setElapsedSec(0);
     setIsSubmitting(true);
+    const startedAt = Date.now();
 
     try {
       const token = getAccessToken();
@@ -169,7 +193,9 @@ export default function SpeechPracticePage() {
       );
     } catch (error) {
       console.error("음성 분석 실패:", error);
-      setFileError(describeSubmitError(error));
+      setFileError(
+        describeSubmitError(error, (Date.now() - startedAt) / 1000)
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -295,6 +321,26 @@ export default function SpeechPracticePage() {
                 )}
               </div>
 
+              {/* 분석 진행 안내 — 오래 걸려도 멈춘 게 아님을 보여준다 */}
+              {isSubmitting && (
+                <div
+                  role="status"
+                  className="mb-6 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#034078] border-t-transparent" />
+                    <p className="text-sm font-medium text-[#034078]">
+                      음성을 분석하고 있어요 ({elapsedSec}초)
+                    </p>
+                  </div>
+                  <p className="mt-2 text-xs text-gray-600">
+                    {elapsedSec < SLOW_ANALYSIS_SEC
+                      ? "보통 30초 안팎이 걸려요. 창을 닫지 말고 기다려주세요."
+                      : "조금 더 걸리고 있어요. 최대 3분까지 기다립니다 — 창을 닫지 말아주세요."}
+                  </p>
+                </div>
+              )}
+
               {/* Buttons */}
               <div className="flex gap-3">
                 <button
@@ -314,7 +360,7 @@ export default function SpeechPracticePage() {
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isSubmitting
-                    ? "분석 중..."
+                    ? `분석 중... ${elapsedSec}초`
                     : isPreparing
                     ? "변환 중..."
                     : "분석하기"}
