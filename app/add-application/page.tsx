@@ -25,6 +25,7 @@ export default function AddApplicationPage() {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
@@ -37,11 +38,20 @@ export default function AddApplicationPage() {
   };
 
   const handleSubmit = async () => {
-    if (!formData.company || !formData.position || !formData.date) {
-      alert("필수 필드를 모두 입력해주세요");
+    const missing = [
+      !formData.company && "기업명",
+      !formData.position && "지원직무",
+      !formData.date && "지원 날짜",
+    ].filter(Boolean);
+
+    if (missing.length > 0) {
+      setFormError(`${missing.join(", ")}을(를) 입력해주세요.`);
       return;
     }
+    setFormError(null);
 
+    // "완료"는 합격/탈락까지 정해져야 저장할 수 있다. 여기서 아직 저장되지 않았다는 점이
+    // 모달에 분명히 드러나야 한다 — 그냥 닫으면 지원이 만들어지지 않는다.
     if (formData.applicationStatus === "완료") {
       setShowPassModal(true);
       return;
@@ -90,7 +100,7 @@ export default function AddApplicationPage() {
       alert("지원이 추가되었습니다");
       router.push("/");
     } catch (error) {
-      alert(error instanceof Error ? error.message : "지원 추가 실패");
+      setFormError(error instanceof Error ? error.message : "지원 추가에 실패했어요.");
     } finally {
       setIsLoading(false);
       setShowPassModal(false);
@@ -196,7 +206,21 @@ export default function AddApplicationPage() {
                   <option value="진행중">진행 중</option>
                   <option value="완료">완료</option>
                 </select>
+                {formData.applicationStatus === "완료" && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    &lsquo;완료&rsquo;는 합격/불합격까지 고른 뒤에 저장돼요.
+                  </p>
+                )}
               </div>
+
+              {formError && (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-[#EE6055] bg-[#FDECEA] px-4 py-3"
+                >
+                  <p className="text-sm font-medium text-[#B23B32]">{formError}</p>
+                </div>
+              )}
 
               {/* Buttons */}
               <div className="flex gap-3 pt-4 border-t border-gray-200">
@@ -227,8 +251,12 @@ export default function AddApplicationPage() {
             <h2 className="text-lg font-bold text-gray-900 mb-2">
               {formData.company} - {formData.stage}
             </h2>
-            <p className="text-sm text-gray-600 mb-6">
+            <p className="text-sm text-gray-600 mb-2">
               합격 여부를 선택해주세요
+            </p>
+            {/* 여기서 그냥 나가면 지원이 만들어지지 않는다 — 저장된 줄 알기 쉬워서 명시한다 */}
+            <p className="text-xs font-medium text-[#B23B32] mb-6">
+              아직 저장되지 않았어요. 아래에서 결과를 골라야 지원이 추가됩니다.
             </p>
 
             <div className="flex gap-3">
@@ -237,16 +265,24 @@ export default function AddApplicationPage() {
                 disabled={isLoading}
                 className="flex-1 border border-gray-300 text-gray-900 font-semibold py-3 rounded-xl hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                불합격
+                {isLoading ? "저장 중..." : "불합격"}
               </button>
               <button
                 onClick={() => handlePassSelection(true)}
                 disabled={isLoading}
                 className="flex-1 bg-[#034078] text-white font-semibold py-3 rounded-xl hover:bg-[#023456] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                합격
+                {isLoading ? "저장 중..." : "합격"}
               </button>
             </div>
+
+            <button
+              onClick={() => setShowPassModal(false)}
+              disabled={isLoading}
+              className="mt-4 w-full text-sm font-medium text-gray-500 underline disabled:opacity-50"
+            >
+              돌아가서 다시 입력하기
+            </button>
           </div>
         </div>
       )}

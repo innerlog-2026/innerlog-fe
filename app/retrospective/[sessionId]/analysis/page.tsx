@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { summarizeRetrospect } from "@/lib/api";
+import MarkdownText from "@/components/markdown-text";
+import { ApiError, summarizeRetrospect } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 
 interface AnalysisData {
@@ -47,7 +48,15 @@ export default function AnalysisPage() {
         });
       } catch (err) {
         console.error("Failed to load analysis:", err);
-        setError("분석 결과를 불러올 수 없습니다");
+        // 409 = 아직 대화가 DONE 에 닿지 않음. "실패"가 아니라 "더 해야 함"이라
+        // 사용자가 할 수 있는 행동이 다르다.
+        setError(
+          err instanceof ApiError && err.status === 409
+            ? "아직 회고가 끝나지 않았어요. 채팅으로 돌아가 대화를 조금 더 이어가 주세요."
+            : err instanceof Error
+            ? err.message
+            : "분석 결과를 불러올 수 없습니다"
+        );
       } finally {
         setIsLoading(false);
       }
@@ -107,7 +116,7 @@ export default function AnalysisPage() {
           <div className="bg-white rounded-3xl p-8 mb-6 border border-gray-200">
             <h2 className="text-xl font-bold text-gray-900 mb-4">면접 총평</h2>
             <p className="text-gray-700 leading-relaxed">
-              {analysis.analysis.summary || "분석 결과가 없습니다"}
+              <MarkdownText text={analysis.analysis.summary || "분석 결과가 없습니다"} />
             </p>
           </div>
 
@@ -128,7 +137,9 @@ export default function AnalysisPage() {
                     strengths.map((strength, idx) => (
                       <li key={idx} className="flex gap-3">
                         <span className="text-[#034078] font-bold flex-shrink-0">•</span>
-                        <span className="text-gray-700">{strength.replace(/\.$/, '')}</span>
+                        <span className="text-gray-700">
+                          <MarkdownText text={strength.replace(/\.$/, '')} />
+                        </span>
                       </li>
                     ))
                   ) : (
@@ -153,7 +164,9 @@ export default function AnalysisPage() {
                     weaknesses.map((weakness, idx) => (
                       <li key={idx} className="flex gap-3">
                         <span className="text-[#EE6055] font-bold flex-shrink-0">•</span>
-                        <span className="text-gray-700">{weakness.replace(/\.$/, '')}</span>
+                        <span className="text-gray-700">
+                          <MarkdownText text={weakness.replace(/\.$/, '')} />
+                        </span>
                       </li>
                     ))
                   ) : (
@@ -168,7 +181,7 @@ export default function AnalysisPage() {
           <div className="bg-white rounded-3xl p-8 mb-6 border border-gray-200">
             <h2 className="text-lg font-bold text-gray-900 mb-4">부족한 부분</h2>
             <p className="text-gray-700 leading-relaxed">
-              {analysis.analysis.gap_analysis || "분석 결과가 없습니다"}
+              <MarkdownText text={analysis.analysis.gap_analysis || "분석 결과가 없습니다"} />
             </p>
           </div>
 
@@ -187,7 +200,9 @@ export default function AnalysisPage() {
                   actions.map((action, idx) => (
                     <li key={idx} className="flex gap-3">
                       <span className="text-[#034078] font-bold flex-shrink-0">{idx + 1}.</span>
-                      <span className="text-gray-700">{action.replace(/\.$/, '')}</span>
+                      <span className="text-gray-700">
+                        <MarkdownText text={action.replace(/\.$/, '')} />
+                      </span>
                     </li>
                   ))
                 ) : (

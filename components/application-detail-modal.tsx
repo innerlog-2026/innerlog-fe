@@ -2,10 +2,16 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { updateStageResult, getApplicationDetail, getRetrospects } from "@/lib/api";
+import { updateStageResult, getApplicationDetail, getRetrospects, isRetrospectFinished } from "@/lib/api";
 import type { ApplicationDetailResponse } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
-import { buildStageResult, getNextStageLabel } from "@/lib/stage";
+import {
+  buildStageResult,
+  getNextStageLabel,
+  isInterviewStage,
+  isRetrospectReachable,
+  type InterviewStage,
+} from "@/lib/stage";
 
 interface Stage {
   id: number;
@@ -27,6 +33,8 @@ interface ApplicationDetailModalProps {
   position: string;
   currentStage: string;
   stageStatus: string;
+  /** 단계 결과를 바꿨을 때 호출. 홈 카드가 새로고침 없이 따라가도록 한다. */
+  onUpdated?: (next: { stage: string; status: string | null }) => void;
 }
 
 const ALL_STAGES = ["서류전형", "코딩테스트", "1차면접", "2차면접", "최종면접"];
@@ -56,6 +64,30 @@ const STAGE_RECORDS: { [key: string]: RecordItem[] } = {
   "2차면접": [{ id: 16, title: "2차 면접 회고", description: "지난 면접을 회고해요" }],
   "최종면접": [{ id: 19, title: "최종 면접 회고", description: "지난 면접을 회고해요" }],
 };
+
+/** 면접 단계별 회고 상태를 서버 응답 플래그에서 읽는다. */
+function retrospectFlags(
+  detail: ApplicationDetailResponse | null,
+  stage: InterviewStage
+): { created: boolean; completed: boolean } {
+  if (!detail) return { created: false, completed: false };
+  if (stage === "1차면접") {
+    return {
+      created: detail.first_retrospect_created,
+      completed: detail.first_retrospect_completed,
+    };
+  }
+  if (stage === "2차면접") {
+    return {
+      created: detail.second_retrospect_created,
+      completed: detail.second_retrospect_completed,
+    };
+  }
+  return {
+    created: detail.final_retrospect_created,
+    completed: detail.final_retrospect_completed,
+  };
+}
 
 // 서버 타임라인(PASS/FAIL/IN_PROGRESS 또는 한글)을 화면용 단계 목록으로 변환한다.
 function mapTimelineToStages(
@@ -93,6 +125,7 @@ export default function ApplicationDetailModal({
   position,
   currentStage,
   stageStatus,
+  onUpdated,
 }: ApplicationDetailModalProps) {
   const router = useRouter();
   const [stages, setStages] = useState<Stage[]>([]);
@@ -100,12 +133,21 @@ export default function ApplicationDetailModal({
   const [displayStatus, setDisplayStatus] = useState<string | null>(stageStatus);
   // 기능 활성화/분기 판단은 전부 서버가 내려준 플래그를 따른다.
   const [detail, setDetail] = useState<ApplicationDetailResponse | null>(null);
-  const [completedItems, setCompletedItems] = useState<{
-    [key: string]: boolean;
-  }>({});
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  /** 서버 응답 하나로 모달 상태를 모두 맞추고, 홈 카드에도 변경을 알린다. */
+  const applyDetail = (next: ApplicationDetailResponse) => {
+    setDetail(next);
+    setStages(mapTimelineToStages(next.timeline));
+    setDisplayStage(next.current_stage ?? currentStage);
+    setDisplayStatus(next.status);
+    onUpdated?.({
+      stage: next.current_stage ?? currentStage,
+      status: next.status,
+    });
+  };
 
   useEffect(() => {
     const loadApplicationDetail = async () => {
@@ -119,19 +161,6 @@ export default function ApplicationDetailModal({
         setStages(mapTimelineToStages(detail.timeline));
         setDisplayStage(detail.current_stage ?? currentStage);
         setDisplayStatus(detail.status);
-
-        // 회고 완료 상태 반영
-        const newCompletedItems: { [key: number]: boolean } = {};
-        if (detail.first_retrospect_completed) {
-          newCompletedItems[12] = true; // 1차 면접 회고
-        }
-        if (detail.second_retrospect_completed) {
-          newCompletedItems[16] = true; // 2차 면접 회고
-        }
-        if (detail.final_retrospect_completed) {
-          newCompletedItems[19] = true; // 최종 면접 회고
-        }
-        setCompletedItems(newCompletedItems);
       } catch (error) {
         console.error("Failed to load application detail:", error);
 
@@ -157,9 +186,11 @@ export default function ApplicationDetailModal({
     }
   }, [isOpen, applicationId, currentStage, stageStatus]);
 
-  // 현재 stage 이하의 모든 stage가 활성화되도록 변경
+  // 현재 stage 이하의 모든 stage가 활성화되도록 변경.
+  // 기준은 props 가 아니라 서버가 내려준 현재 단계다 — 모달 안에서 단계를 바꾸면
+  // props 는 그대로라 목록이 따라가지 않는다.
   const getActivatedStages = (): string[] => {
-    const currentIdx = ALL_STAGES.indexOf(currentStage);
+    const currentIdx = ALL_STAGES.indexOf(displayStage);
     if (currentIdx === -1) return [];
     return ALL_STAGES.slice(0, currentIdx + 1);
   };
@@ -169,43 +200,58 @@ export default function ApplicationDetailModal({
   const speechAvailable = detail?.speech_practice_available ?? false;
   const questionsCreated = detail?.speech_practice_created ?? false;
 
-  // 회고 활성화: 완료된(합격/탈락) 단계
-  const isRetrospectActive = (stageName: string): boolean => {
-    if (!getActivatedStages().includes(stageName)) return false;
-    const stageObj = stages.find((s) => s.name === stageName);
-    if (!stageObj) return false;
-    return stageObj.status === "합격" || stageObj.status === "탈락";
-  };
+  // 회고 활성화: 서버 기준(available_retrospect_types)과 동일하게,
+  // 현재 단계까지 도달한 면접 단계면 상태와 무관하게 연다.
+  // "합격/탈락인 단계만"으로 좁히면 2차면접 진행중일 때 2차 회고가 잠겨버려서,
+  // 1차와 2차 회고를 나란히 열어둘 수 없다.
+  const isRetrospectActive = (stageName: string): boolean =>
+    isInterviewStage(stageName) && isRetrospectReachable(stageName, displayStage);
 
-  const handleRetrospectClick = async (stageName: string, itemId: number) => {
-    // 이미 끝낸 회고는 분석 페이지로 보낸다.
-    if (completedItems[itemId]) {
-      try {
-        const token = getAccessToken();
-        if (!token) {
-          alert("로그인이 필요합니다");
-          return;
-        }
+  /**
+   * 회고 열기.
+   *
+   * stage 를 URL 로 같이 넘기는 게 핵심이다. 빼먹으면 회고 시작 API 가 "현재 전형
+   * 단계"를 기본값으로 쓰기 때문에, 2차면접 진행중인 지원에서 "1차 면접 회고"를
+   * 눌러도 2차 회고가 열린다.
+   */
+  const handleRetrospectClick = async (stageName: string) => {
+    if (!isInterviewStage(stageName)) return;
 
-        const retrospects = await getRetrospects(applicationId.toString(), token);
-        const completedSession = retrospects.sessions?.find(
-          (session) => session.stage === stageName && session.ended_at
-        );
+    const { created } = retrospectFlags(detail, stageName);
+    const chatHref = `/retrospective?applicationId=${applicationId}&stage=${encodeURIComponent(stageName)}`;
 
-        if (!completedSession) {
-          alert("회고 세션을 찾을 수 없습니다");
-          return;
-        }
-
-        router.push(`/retrospective/${completedSession.session_id}/analysis`);
-      } catch (error) {
-        alert(error instanceof Error ? error.message : "분석 페이지 이동 실패");
-      }
+    // 아직 만든 적 없는 회고면 곧바로 새로 시작한다.
+    if (!created) {
+      router.push(chatHref);
       return;
     }
 
-    setCompletedItems((prev) => ({ ...prev, [itemId]: true }));
-    router.push(`/retrospective?applicationId=${applicationId}`);
+    // 이미 있는 회고는 목록에서 찾아, 끝났으면 분석으로 / 진행중이면 이어서 연다.
+    // (세션 식별은 대화 단계인 stage 가 아니라 면접 단계인 type 으로 한다)
+    try {
+      const token = getAccessToken();
+      if (!token) {
+        alert("로그인이 필요합니다");
+        return;
+      }
+
+      const retrospects = await getRetrospects(applicationId.toString(), token);
+      const session = retrospects.sessions?.find((item) => item.type === stageName);
+
+      if (!session) {
+        // 플래그와 목록이 어긋난 경우 — 채팅 화면이 409 를 다시 처리한다.
+        router.push(chatHref);
+        return;
+      }
+
+      router.push(
+        isRetrospectFinished(session)
+          ? `/retrospective/${session.session_id}/analysis`
+          : `${chatHref}&sessionId=${session.session_id}`
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "회고를 열지 못했습니다");
+    }
   };
 
   interface DisplayRecord {
@@ -247,17 +293,23 @@ export default function ApplicationDetailModal({
       },
     ];
 
-    // 단계별 항목(회고)
+    // 단계별 항목(회고). 도달한 면접 단계는 모두 노출하므로
+    // 2차면접 진행중이면 1차·2차 회고가 나란히 열린다.
     getActivatedStages().forEach((stageName) => {
+      if (!isInterviewStage(stageName)) return;
+      const { created, completed } = retrospectFlags(detail, stageName);
+
       (STAGE_RECORDS[stageName] ?? []).forEach((item) => {
         records.push({
           key: `${stageName}-${item.id}`,
           stageLabel: stageName,
-          item,
+          item: created && !completed
+            ? { ...item, description: "진행중인 회고를 이어서 해요" }
+            : item,
           isDisabled: !isRetrospectActive(stageName),
-          isCompleted: Boolean(completedItems[item.id]),
+          isCompleted: completed,
           disabledReason: unavailable,
-          onSelect: () => handleRetrospectClick(stageName, item.id),
+          onSelect: () => handleRetrospectClick(stageName),
         });
       });
     });
@@ -295,10 +347,7 @@ export default function ApplicationDetailModal({
         token
       );
 
-      setDetail(updatedDetail);
-      setStages(mapTimelineToStages(updatedDetail.timeline));
-      setDisplayStage(updatedDetail.current_stage ?? currentStage);
-      setDisplayStatus(updatedDetail.status);
+      applyDetail(updatedDetail);
       setShowPassModal(false);
     } catch (error) {
       alert(error instanceof Error ? error.message : "단계 업데이트 실패");
@@ -345,10 +394,7 @@ export default function ApplicationDetailModal({
         token
       );
 
-      setDetail(updatedDetail);
-      setStages(mapTimelineToStages(updatedDetail.timeline));
-      setDisplayStage(updatedDetail.current_stage ?? currentStage);
-      setDisplayStatus(updatedDetail.status);
+      applyDetail(updatedDetail);
     } catch (error) {
       alert(error instanceof Error ? error.message : "단계 업데이트 실패");
     }
@@ -391,7 +437,7 @@ export default function ApplicationDetailModal({
           </div>
           <button
             onClick={handleEditStage}
-            disabled={stages.find((s) => s.name === currentStage)?.status === "탈락"}
+            disabled={stages.find((s) => s.name === displayStage)?.status === "탈락"}
             className="bg-white text-gray-900 font-semibold px-6 py-3 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer text-sm disabled:bg-gray-300 disabled:cursor-not-allowed disabled:text-gray-600"
           >
             진행 단계 수정

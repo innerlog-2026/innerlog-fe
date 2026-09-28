@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
-import { getApplications, updateStageResult, getApplicationDetail, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
+import {
+  getApplications,
+  updateStageResult,
+  getRetrospects,
+  isRetrospectFinished,
+  NetworkError,
+  isApplicationCompleted,
+  type RetrospectSessionItem,
+} from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
 import { buildStageResult, getNextStageLabel } from "@/lib/stage";
 
@@ -13,42 +21,25 @@ interface User {
   name: string;
 }
 
+/** 회고 카드 배지 상태. none = 아직 시작 안 함 */
+type RetrospectState = "none" | "ongoing" | "done";
+
 interface Application {
   id: string;
   company: string;
+  position: string;
   statusLine1: string;
   statusLine2: string;
   statusType: "progress" | "fail" | "pass";
-  reviewed: boolean;
+  retrospect: RetrospectState;
   applicationId?: string;
 }
 
-const MOCK_APPLICATIONS: Application[] = [
-  {
-    id: "1",
-    company: "토스 뱅크",
-    statusLine1: "서류전형",
-    statusLine2: "진행중",
-    statusType: "progress",
-    reviewed: false,
-  },
-  {
-    id: "2",
-    company: "토스 뱅크",
-    statusLine1: "서류전형",
-    statusLine2: "진행중",
-    statusType: "progress",
-    reviewed: false,
-  },
-  {
-    id: "3",
-    company: "토스 뱅크",
-    statusLine1: "최종면접",
-    statusLine2: "탈락",
-    statusType: "fail",
-    reviewed: true,
-  },
-];
+const RETROSPECT_BADGE: Record<RetrospectState, { label: string; color: string }> = {
+  none: { label: "회고전", color: "bg-[#EE6055]" },
+  ongoing: { label: "진행중", color: "bg-[#F7B538]" },
+  done: { label: "회고완료", color: "bg-[#43AA8B]" },
+};
 
 const STATUS_BADGE_COLORS: Record<Application["statusType"], string> = {
   progress: "bg-[#8ECAE6]",
@@ -56,18 +47,121 @@ const STATUS_BADGE_COLORS: Record<Application["statusType"], string> = {
   pass: "bg-[#43AA8B]",
 };
 
+/** 지원 한 건의 회고 세션들을 카드 배지 상태 하나로 요약한다. */
+function retrospectStateOf(
+  sessions: RetrospectSessionItem[] | undefined
+): RetrospectState {
+  if (!sessions?.length) return "none";
+  // 하나라도 진행중이면 "이어서 할 게 남았다"를 먼저 알린다.
+  if (sessions.some((session) => !isRetrospectFinished(session))) return "ongoing";
+  return "done";
+}
+
+/**
+ * 표시할 페이지 번호 목록. 페이지가 많으면 현재 위치 주변만 남기고 "…"로 접는다.
+ * 예) 현재 6 / 전체 12 → [1, "…", 5, 6, 7, "…", 12]
+ */
+function pageItems(current: number, total: number): Array<number | "…"> {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const around = [current - 1, current, current + 1].filter(
+    (page) => page > 1 && page < total
+  );
+  const items: Array<number | "…"> = [1];
+  if (around[0] > 2) items.push("…");
+  items.push(...around);
+  if (around[around.length - 1] < total - 1) items.push("…");
+  items.push(total);
+  return items;
+}
+
 export default function Home() {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [selectedApp, setSelectedApp] = useState<Application | null>(null);
   const [mounted, setMounted] = useState(false);
-  const [applications, setApplications] = useState<Application[]>(MOCK_APPLICATIONS);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [editingApp, setEditingApp] = useState<Application | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showPassModal, setShowPassModal] = useState(false);
   const [selectedPass, setSelectedPass] = useState<"pass" | "fail" | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // 서버가 한 페이지에 5건씩 준다. 화면도 같은 단위로 끊어서 보여준다.
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [isPageLoading, setIsPageLoading] = useState(false);
+  // 상단 배너는 첫 페이지 기준으로 고정한다 — 페이지를 넘길 때마다
+  // "다음에 할 일"이 바뀌면 배너가 목록 따라 흔들린다.
+  const [bannerApp, setBannerApp] = useState<Application | null>(null);
+
+  /**
+   * 지원 목록 한 페이지를 받아 화면을 그 페이지로 교체한다.
+   *
+   * 회고 배지는 목록 API 에 없어서 지원 건마다 따로 조회해야 한다. 전체를 한 번에
+   * 받으면 요청이 건수만큼 늘어나므로, 서버 페이지 단위(5건) 그대로 끊어서 읽는다.
+   */
+  const loadPage = async (page: number, token: string) => {
+    const response = await getApplications(token, page);
+
+    const pageApps: Application[] = response.items.map((item) => ({
+      id: item.application_id,
+      company: item.company_name,
+      position: item.position,
+      statusLine1: item.stage,
+      statusLine2: isApplicationCompleted(item.status) ? "완료" : "진행중",
+      statusType: isApplicationCompleted(item.status) ? "pass" : "progress",
+      retrospect: "none",
+      applicationId: item.application_id,
+    }));
+
+    setApplications(pageApps);
+    setCurrentPage(response.page ?? page);
+    // total_pages 가 없으면 has_next 로 최소한의 범위만 안다.
+    setTotalPages(response.total_pages || (response.has_next ? page + 1 : page));
+    if (page === 1) setBannerApp(pageApps[0] ?? null);
+
+    // 목록이 먼저 그려진 뒤 배지만 나중에 채워지도록 두 단계로 나눴다.
+    const states = await Promise.all(
+      pageApps.map(async (app) => {
+        try {
+          const list = await getRetrospects(app.id, token);
+          return [app.id, retrospectStateOf(list.sessions)] as const;
+        } catch {
+          // 한 건이 실패해도 나머지 배지는 살린다.
+          return [app.id, "none"] as const;
+        }
+      })
+    );
+    const stateById = new Map<string, RetrospectState>(states);
+    setApplications((prev) =>
+      prev.map((app) => ({
+        ...app,
+        retrospect: stateById.get(app.id) ?? app.retrospect,
+      }))
+    );
+    if (page === 1) {
+      setBannerApp((prev) =>
+        prev ? { ...prev, retrospect: stateById.get(prev.id) ?? prev.retrospect } : prev
+      );
+    }
+  };
+
+  const handlePageChange = async (page: number) => {
+    const token = getAccessToken();
+    if (!token || page === currentPage || isPageLoading) return;
+
+    setIsPageLoading(true);
+    try {
+      await loadPage(page, token);
+    } catch (error) {
+      setLoadError(
+        error instanceof Error ? error.message : "지원 목록을 불러오지 못했습니다."
+      );
+    } finally {
+      setIsPageLoading(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -89,31 +183,7 @@ export default function Home() {
           }
         }
 
-        const response = await getApplications(token);
-        const displayApps: Application[] = response.items.map((item) => {
-          let statusLine2: string;
-          let statusType: "progress" | "fail" | "pass";
-
-          if (isApplicationCompleted(item.status)) {
-            statusLine2 = "완료";
-            statusType = "pass";
-          } else {
-            // "진행중"
-            statusLine2 = "진행중";
-            statusType = "progress";
-          }
-
-          return {
-            id: item.application_id,
-            company: item.company_name,
-            statusLine1: item.stage,
-            statusLine2,
-            statusType,
-            reviewed: false,
-            applicationId: item.application_id,
-          };
-        });
-        setApplications(displayApps);
+        await loadPage(1, token);
       } catch (error) {
         console.error("Failed to load applications:", error);
         // 401(세션 만료)은 lib/api.ts에서 토큰 갱신을 시도하고,
@@ -132,7 +202,7 @@ export default function Home() {
   }, [router]);
 
   const getNextAction = (app: Application) => {
-    if (!app.reviewed && app.statusType === "progress") {
+    if (app.retrospect !== "done" && app.statusType === "progress") {
       return {
         title: app.company,
         action: `회고하러 가볼까요?`,
@@ -216,26 +286,16 @@ export default function Home() {
         const token = getAccessToken();
         if (!token) return;
 
-        // 회고 완료 여부 확인
         const retrospects = await getRetrospects(selectedApp.id, token);
-        console.log("Retrospects:", retrospects);
-
-        // 완료된 회고가 있는지 확인 (ended_at이 있으면 완료됨)
-        const hasCompletedRetrospect = retrospects.sessions?.some(
-          (session) => session.ended_at
-        );
+        const state = retrospectStateOf(retrospects.sessions);
 
         setApplications((prev) =>
-          prev.map((app) => {
-            if (app.id === selectedApp.id) {
-              console.log(`App ${selectedApp.id} hasCompletedRetrospect:`, hasCompletedRetrospect);
-              return {
-                ...app,
-                reviewed: hasCompletedRetrospect || false,
-              };
-            }
-            return app;
-          })
+          prev.map((app) =>
+            app.id === selectedApp.id ? { ...app, retrospect: state } : app
+          )
+        );
+        setBannerApp((prev) =>
+          prev && prev.id === selectedApp.id ? { ...prev, retrospect: state } : prev
         );
       } catch (error) {
         console.error("Failed to update application:", error);
@@ -243,6 +303,40 @@ export default function Home() {
     }
 
     setSelectedApp(null);
+  };
+
+  /** 모달 안에서 단계 결과를 바꾸면 홈 카드도 바로 따라간다 (새로고침 불필요). */
+  const handleDetailUpdated = (
+    appId: string,
+    next: { stage: string; status: string | null }
+  ) => {
+    setApplications((prev) =>
+      prev.map((app) =>
+        app.id === appId
+          ? {
+              ...app,
+              statusLine1: next.stage,
+              statusLine2: next.status ?? app.statusLine2,
+              statusType:
+                next.status === "탈락"
+                  ? "fail"
+                  : next.status === "합격"
+                  ? "pass"
+                  : "progress",
+            }
+          : app
+      )
+    );
+    setSelectedApp((current) =>
+      current && current.id === appId
+        ? { ...current, statusLine1: next.stage, statusLine2: next.status ?? current.statusLine2 }
+        : current
+    );
+    setBannerApp((prev) =>
+      prev && prev.id === appId
+        ? { ...prev, statusLine1: next.stage, statusLine2: next.status ?? prev.statusLine2 }
+        : prev
+    );
   };
 
   return (
@@ -278,9 +372,8 @@ export default function Home() {
 
             {/* Banner */}
             {(() => {
-              const firstApp = applications[0];
-              if (!firstApp) return null;
-              const nextAction = getNextAction(firstApp);
+              if (!bannerApp) return null;
+              const nextAction = getNextAction(bannerApp);
               return (
                 <button
                   onClick={() => router.push(nextAction.href)}
@@ -331,20 +424,70 @@ export default function Home() {
                       <div>{app.statusLine2}</div>
                     </div>
                     <button
-                      className={`text-white text-sm font-bold rounded-lg transition-colors cursor-pointer w-20 h-10 flex items-center justify-center ${
-                        app.reviewed
-                          ? "bg-[#43AA8B]"
-                          : "bg-[#EE6055]"
-                      }`}
+                      className={`${RETROSPECT_BADGE[app.retrospect].color} text-white text-sm font-bold rounded-lg transition-colors cursor-pointer w-20 h-10 flex items-center justify-center`}
                       onClick={(e) => e.stopPropagation()}
                     >
                       <div className="text-center">
-                        {app.reviewed ? "회고완료" : "회고전"}
+                        {RETROSPECT_BADGE[app.retrospect].label}
                       </div>
                     </button>
                   </div>
                 </div>
               ))}
+
+              {/* 서버가 한 페이지에 5건씩 준다 — 같은 단위로 페이지를 넘긴다 */}
+              {totalPages > 1 && (
+                <nav
+                  aria-label="지원 현황 페이지"
+                  className="flex items-center justify-center gap-1 pt-2"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage <= 1 || isPageLoading}
+                    aria-label="이전 페이지"
+                    className="h-10 w-10 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    ‹
+                  </button>
+
+                  {pageItems(currentPage, totalPages).map((item, idx) =>
+                    item === "…" ? (
+                      <span
+                        key={`gap-${idx}`}
+                        className="h-10 w-10 flex items-center justify-center text-gray-400"
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => handlePageChange(item)}
+                        disabled={isPageLoading}
+                        aria-current={item === currentPage ? "page" : undefined}
+                        className={`h-10 w-10 rounded-lg text-sm font-semibold transition-colors disabled:cursor-not-allowed ${
+                          item === currentPage
+                            ? "bg-[#034078] text-white"
+                            : "text-gray-600 hover:bg-gray-100 disabled:opacity-50"
+                        }`}
+                      >
+                        {item}
+                      </button>
+                    )
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage >= totalPages || isPageLoading}
+                    aria-label="다음 페이지"
+                    className="h-10 w-10 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    ›
+                  </button>
+                </nav>
+              )}
             </div>
           </div>
         </div>
@@ -356,9 +499,10 @@ export default function Home() {
           onClose={handleModalClose}
           applicationId={selectedApp.id}
           company={selectedApp.company}
-          position={selectedApp.company}
+          position={selectedApp.position}
           currentStage={selectedApp.statusLine1}
           stageStatus={selectedApp.statusLine2}
+          onUpdated={(next) => handleDetailUpdated(selectedApp.id, next)}
         />
       )}
 
