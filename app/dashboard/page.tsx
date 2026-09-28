@@ -3,12 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
-import { getAllApplications, getRetrospects, NetworkError, isApplicationCompleted } from "@/lib/api";
+import { getDashboard, NetworkError } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
-
-interface User {
-  name: string;
-}
 
 interface StatCard {
   label: string;
@@ -29,15 +25,8 @@ interface StageProgress {
   color: "blue" | "orange" | "red";
 }
 
-interface EmotionData {
-  neutral: number;
-  positive: number;
-  negative: number;
-}
-
 export default function Dashboard() {
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
   const [stats, setStats] = useState<StatCard[]>([
     { label: "지원 횟수", value: 0 },
     { label: "완료된 회고", value: 0 },
@@ -46,11 +35,6 @@ export default function Dashboard() {
   ]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [stageProgress, setStageProgress] = useState<StageProgress[]>([]);
-  const [emotionData, setEmotionData] = useState<EmotionData>({
-    neutral: 0,
-    positive: 0,
-    negative: 0,
-  });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -63,115 +47,36 @@ export default function Dashboard() {
           return;
         }
 
-        const stored = localStorage.getItem("innerlog_user");
-        if (stored) {
-          try {
-            setUser(JSON.parse(stored));
-          } catch {
-            // ignore
-          }
-        }
-
-        // 서버 페이지 크기가 5라서 1페이지만 읽으면 지원 10건이 5건으로 집계된다.
-        const { items: applications, totalCount } = await getAllApplications(token);
-
-        // 1. 지원 횟수 — 서버가 세어준 전체 건수를 쓴다.
-        const totalApplications = totalCount;
-
-        // 2. 전형 단계별 합격 현황 수집 & 회고 데이터 수집
-        const stageCountMap: Record<string, { passed: number; total: number }> = {};
-        const allWeaknesses: Map<string, number> = new Map();
-        let completedRetrospects = 0;
-        let totalSelfBlame = 0;
-        let emotionCounts = { neutral: 0, positive: 0, negative: 0 };
-
-        // 모든 지원에 대해 회고 데이터 조회
-        for (const app of applications) {
-          try {
-            const retrospectResponse = await getRetrospects(app.application_id, token);
-            const sessions = retrospectResponse.sessions;
-
-            // 각 세션의 상태 확인
-            for (const session of sessions) {
-              if (session.status === "COMPLETED") {
-                completedRetrospects++;
-                // TODO: 실제 분석 데이터에서 weaknesses와 감정톤 수집
-              }
-            }
-
-            // 전형 단계별 통계
-            if (app.stage) {
-              if (!stageCountMap[app.stage]) {
-                stageCountMap[app.stage] = { passed: 0, total: 0 };
-              }
-              stageCountMap[app.stage].total += 1;
-
-              // 합격 상태인 경우
-              if (isApplicationCompleted(app.status)) {
-                stageCountMap[app.stage].passed += 1;
-              }
-            }
-          } catch (error) {
-            console.error(`Failed to load retrospects for application ${app.application_id}:`, error);
-          }
-        }
-
-        // 3. 통계 업데이트
-        // "많이 막히는 단계" = 가장 많은 지원이 머물러 있는 전형 단계.
-        // (기존에는 첫 지원의 단계를 그대로 보여주고 있어 값에 의미가 없었다)
-        const stuckStage =
-          Object.entries(stageCountMap).sort(
-            (a, b) => b[1].total - a[1].total
-          )[0]?.[0] ?? "-";
+        // 집계는 서버(GET /dashboard)가 조회 시점 기준으로 해서 내려준다.
+        const dashboard = await getDashboard(token);
 
         setStats([
-          { label: "지원 횟수", value: totalApplications },
-          { label: "완료된 회고", value: completedRetrospects },
-          { label: "자기비난 감지", value: totalSelfBlame },
-          { label: "많이 막히는 단계", value: stuckStage },
+          { label: "지원 횟수", value: dashboard.application_count },
+          { label: "완료된 회고", value: dashboard.completed_retrospect_count },
+          { label: "자기비난 감지", value: dashboard.self_blame_count },
+          { label: "많이 막히는 단계", value: dashboard.most_failed_stage ?? "-" },
         ]);
 
-        // 4. 전형 단계별 합격 현황
-        const colorMap: Record<number, "blue" | "orange" | "red"> = { 0: "blue", 1: "orange", 2: "red" };
-        const stages = Object.entries(stageCountMap).map(([stage, counts], idx) => ({
-          stage,
-          count: counts.passed,
-          total: counts.total,
-          color: colorMap[idx % 3] || "blue",
-        }));
-        setStageProgress(stages);
-
-        // 5. 약점 키워드 (회고 완료 시에만 표시)
-        if (completedRetrospects > 0 && allWeaknesses.size > 0) {
-          const sortedWeaknesses = Array.from(allWeaknesses.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 3);
-          const colorArray: ("orange" | "red" | "blue")[] = ["orange", "red", "blue"];
-          const keywords: Keyword[] = sortedWeaknesses.map(([text, _], idx) => ({
-            id: idx,
-            text,
+        // 전형 단계별 합격 현황 — 서버가 전형 순서대로, 도달한 단계만 준다.
+        const colorArray: ("blue" | "orange" | "red")[] = ["blue", "orange", "red"];
+        setStageProgress(
+          dashboard.stage_results.map((result, idx) => ({
+            stage: result.stage,
+            count: result.pass_count,
+            total: result.total_count,
             color: colorArray[idx % 3],
-          }));
-          setKeywords(keywords);
-        } else {
-          setKeywords([]);
-        }
+          }))
+        );
 
-        // 6. 감정톤 데이터 (회고 완료 시에만 표시, 기본값은 0)
-        if (completedRetrospects > 0) {
-          const total = Object.values(emotionCounts).reduce((a, b) => a + b, 0);
-          if (total > 0) {
-            setEmotionData({
-              neutral: Math.round((emotionCounts.neutral / total) * 100),
-              positive: Math.round((emotionCounts.positive / total) * 100),
-              negative: Math.round((emotionCounts.negative / total) * 100),
-            });
-          } else {
-            setEmotionData({ neutral: 0, positive: 0, negative: 0 });
-          }
-        } else {
-          setEmotionData({ neutral: 0, positive: 0, negative: 0 });
-        }
+        // 반복 보완 키워드 — 서버가 많이 나온 순 상위 3개만 준다.
+        const keywordColors: ("orange" | "red" | "blue")[] = ["orange", "red", "blue"];
+        setKeywords(
+          dashboard.weakness_keywords.map((item, idx) => ({
+            id: idx,
+            text: item.keyword,
+            color: keywordColors[idx % 3],
+          }))
+        );
 
         setLoading(false);
       } catch (error) {
@@ -314,62 +219,6 @@ export default function Dashboard() {
                   })}
                 </div>
               </div>
-            </div>
-
-            {/* Emotion tone section */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-2">전체 회고 평균 감정톤</h3>
-              <p className="text-sm text-gray-500 mb-5">
-                완료한 회고 전체의 감정 톤 평균이에요
-              </p>
-
-              {emotionData.neutral !== 0 || emotionData.positive !== 0 || emotionData.negative !== 0 ? (
-                <>
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="flex-1 bg-gray-200 rounded-full h-8 flex overflow-hidden">
-                      <div
-                        className="bg-[#D9D9D9]"
-                        style={{ width: `${emotionData.neutral}%` }}
-                      />
-                      <div
-                        className="bg-[#43AA8B]"
-                        style={{ width: `${emotionData.positive}%` }}
-                      />
-                      <div
-                        className="bg-[#EE6055]"
-                        style={{ width: `${emotionData.negative}%` }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex gap-6">
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-[#D9D9D9]" />
-                      <span className="text-sm text-gray-700">
-                        중립 <span className="font-semibold">{emotionData.neutral}%</span>
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-[#43AA8B]" />
-                      <span className="text-sm text-gray-700">
-                        긍정 <span className="font-semibold">{emotionData.positive}%</span>
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-3 h-3 rounded-full bg-[#EE6055]" />
-                      <span className="text-sm text-gray-700">
-                        부정 <span className="font-semibold">{emotionData.negative}%</span>
-                      </span>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-gray-500 mt-4">전체적으로 긍정적인 감정 톤이에요.</p>
-                </>
-              ) : (
-                <div className="flex items-center justify-center py-12">
-                  <p className="text-gray-400 text-sm">회고를 완료해주세요</p>
-                </div>
-              )}
             </div>
           </div>
         </div>

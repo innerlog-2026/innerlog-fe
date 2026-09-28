@@ -330,7 +330,7 @@ export default function SpeechPracticePage() {
                   <div className="flex items-center gap-3">
                     <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-[#034078] border-t-transparent" />
                     <p className="text-sm font-medium text-[#034078]">
-                      음성을 분석하고 있어요 ({elapsedSec}초)
+                      음성을 분석하고 있어요
                     </p>
                   </div>
                   <p className="mt-2 text-xs text-gray-600">
@@ -360,7 +360,7 @@ export default function SpeechPracticePage() {
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {isSubmitting
-                    ? `분석 중... ${elapsedSec}초`
+                    ? "분석 중..."
                     : isPreparing
                     ? "변환 중..."
                     : "분석하기"}

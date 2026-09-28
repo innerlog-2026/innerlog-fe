@@ -229,7 +229,15 @@ export interface ApplicationListItem {
   /** 표기가 서버마다 다르다. 비교는 isApplicationCompleted() 로 한다. */
   status: ApplicationStatus;
   created_at: string;
+  /**
+   * 현재 전형 단계의 면접 회고 상태. 현재 단계가 면접(1차/2차/최종)이 아니면 null.
+   * 구버전 서버는 필드 자체가 없을 수 있다.
+   */
+  retrospect_status?: ApplicationRetrospectStatus | null;
 }
+
+/** 목록 응답의 현재 단계 회고 상태 (서버 RetrospectStatusEnum) */
+export type ApplicationRetrospectStatus = "회고전" | "회고중" | "회고완료";
 
 export interface ApplicationListResponse {
   items: ApplicationListItem[];
@@ -356,6 +364,42 @@ export async function updateStageResult(
       errorMessage: "단계 업데이트 실패",
     }
   );
+}
+
+// ---------------------------------------------------------------------------
+// 대시보드(dashboard)
+// ---------------------------------------------------------------------------
+
+export interface WeaknessKeywordItem {
+  keyword: string;
+  count: number;
+}
+
+export interface StageResultCountItem {
+  stage: string;
+  pass_count: number;
+  fail_count: number;
+  /** 해당 단계에 도달한 지원 수 (진행중 + 합격 + 탈락) */
+  total_count: number;
+}
+
+export interface DashboardResponse {
+  application_count: number;
+  completed_retrospect_count: number;
+  self_blame_count: number;
+  /** 탈락이 가장 많은 단계. 탈락 기록이 없으면 null */
+  most_failed_stage: string | null;
+  /** 많이 나온 순 상위 3개 (없으면 빈 배열) */
+  weakness_keywords: WeaknessKeywordItem[];
+  /** 도달한 지원이 있는 단계만, 전형 순서대로 */
+  stage_results: StageResultCountItem[];
+}
+
+export async function getDashboard(access_token: string): Promise<DashboardResponse> {
+  return request<DashboardResponse>("/dashboard", {
+    token: access_token,
+    errorMessage: "대시보드 조회 실패",
+  });
 }
 
 // ---------------------------------------------------------------------------

@@ -155,7 +155,7 @@ export default function SignupPage() {
         part: selectedJob,
       });
       saveTokens(access_token, refresh_token, nickname);
-      router.push("/dashboard");
+      router.push("/");
     } catch (err) {
       setApiError(
         err instanceof Error ? err.message : "회원가입에 실패했습니다."
