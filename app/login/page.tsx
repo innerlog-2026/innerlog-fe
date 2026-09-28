@@ -25,7 +25,7 @@ export default function LoginPage() {
       const userName = email.split("@")[0];
 
       saveTokens(access_token, refresh_token, userName);
-      router.push("/dashboard");
+      router.push("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : "로그인에 실패했습니다.");
     } finally {

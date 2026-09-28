@@ -6,23 +6,31 @@ import { useRouter } from "next/navigation";
 import TopBar from "@/components/topbar";
 import ApplicationDetailModal from "@/components/application-detail-modal";
 import {
+  getApplicationDetail,
   getApplications,
   updateStageResult,
-  getRetrospects,
-  isRetrospectFinished,
   NetworkError,
   isApplicationCompleted,
-  type RetrospectSessionItem,
+  type ApplicationDetailResponse,
+  type ApplicationRetrospectStatus,
 } from "@/lib/api";
 import { getAccessToken } from "@/lib/auth";
-import { buildStageResult, getNextStageLabel } from "@/lib/stage";
+import {
+  buildStageResult,
+  getNextStageLabel,
+  isInterviewStage,
+  INTERVIEW_STAGES,
+} from "@/lib/stage";
 
 interface User {
   name: string;
 }
 
-/** 회고 카드 배지 상태. none = 아직 시작 안 함 */
-type RetrospectState = "none" | "ongoing" | "done";
+/**
+ * 회고 카드 배지 상태 (현재 전형 단계 기준). none = 아직 시작 안 함.
+ * null = 현재 단계가 면접이 아니라 회고 대상이 아님 → 배지를 숨긴다.
+ */
+type RetrospectState = "none" | "ongoing" | "done" | null;
 
 interface Application {
   id: string;
@@ -35,7 +43,7 @@ interface Application {
   applicationId?: string;
 }
 
-const RETROSPECT_BADGE: Record<RetrospectState, { label: string; color: string }> = {
+const RETROSPECT_BADGE: Record<NonNullable<RetrospectState>, { label: string; color: string }> = {
   none: { label: "회고전", color: "bg-[#EE6055]" },
   ongoing: { label: "진행중", color: "bg-[#F7B538]" },
   done: { label: "회고완료", color: "bg-[#43AA8B]" },
@@ -47,14 +55,29 @@ const STATUS_BADGE_COLORS: Record<Application["statusType"], string> = {
   pass: "bg-[#43AA8B]",
 };
 
-/** 지원 한 건의 회고 세션들을 카드 배지 상태 하나로 요약한다. */
+const RETROSPECT_STATE_BY_STATUS: Record<ApplicationRetrospectStatus, NonNullable<RetrospectState>> = {
+  회고전: "none",
+  회고중: "ongoing",
+  회고완료: "done",
+};
+
+/** 목록 API 의 retrospect_status 를 카드 배지 상태로 바꾼다. */
 function retrospectStateOf(
-  sessions: RetrospectSessionItem[] | undefined
+  status: ApplicationRetrospectStatus | null | undefined
 ): RetrospectState {
-  if (!sessions?.length) return "none";
-  // 하나라도 진행중이면 "이어서 할 게 남았다"를 먼저 알린다.
-  if (sessions.some((session) => !isRetrospectFinished(session))) return "ongoing";
-  return "done";
+  return status ? RETROSPECT_STATE_BY_STATUS[status] ?? null : null;
+}
+
+/**
+ * 단계가 바뀐 직후의 회고 배지. 새로 도달한 단계엔 아직 회고 세션이 없으므로
+ * 면접 단계면 "회고전", 아니면 회고 대상이 아니다. 단계가 그대로면 기존 값 유지.
+ */
+function retrospectStateAfterStageChange(
+  app: Application,
+  nextStage: string
+): RetrospectState {
+  if (nextStage === app.statusLine1) return app.retrospect;
+  return isInterviewStage(nextStage) ? "none" : null;
 }
 
 /**
@@ -94,12 +117,13 @@ export default function Home() {
   // 상단 배너는 첫 페이지 기준으로 고정한다 — 페이지를 넘길 때마다
   // "다음에 할 일"이 바뀌면 배너가 목록 따라 흔들린다.
   const [bannerApp, setBannerApp] = useState<Application | null>(null);
+  // 배너는 "다음에 할 일"을 권하는 자리라, 목록에 없는 게이팅 플래그가 필요하다.
+  // (목록 API 에는 없고 상세 API 에만 있어서 배너 대상 1건만 따로 읽는다)
+  const [bannerDetail, setBannerDetail] = useState<ApplicationDetailResponse | null>(null);
 
   /**
    * 지원 목록 한 페이지를 받아 화면을 그 페이지로 교체한다.
-   *
-   * 회고 배지는 목록 API 에 없어서 지원 건마다 따로 조회해야 한다. 전체를 한 번에
-   * 받으면 요청이 건수만큼 늘어나므로, 서버 페이지 단위(5건) 그대로 끊어서 읽는다.
+   * 회고 배지도 목록 응답(retrospect_status)에 같이 온다.
    */
   const loadPage = async (page: number, token: string) => {
     const response = await getApplications(token, page);
@@ -111,7 +135,7 @@ export default function Home() {
       statusLine1: item.stage,
       statusLine2: isApplicationCompleted(item.status) ? "완료" : "진행중",
       statusType: isApplicationCompleted(item.status) ? "pass" : "progress",
-      retrospect: "none",
+      retrospect: retrospectStateOf(item.retrospect_status),
       applicationId: item.application_id,
     }));
 
@@ -119,31 +143,16 @@ export default function Home() {
     setCurrentPage(response.page ?? page);
     // total_pages 가 없으면 has_next 로 최소한의 범위만 안다.
     setTotalPages(response.total_pages || (response.has_next ? page + 1 : page));
-    if (page === 1) setBannerApp(pageApps[0] ?? null);
-
-    // 목록이 먼저 그려진 뒤 배지만 나중에 채워지도록 두 단계로 나눴다.
-    const states = await Promise.all(
-      pageApps.map(async (app) => {
-        try {
-          const list = await getRetrospects(app.id, token);
-          return [app.id, retrospectStateOf(list.sessions)] as const;
-        } catch {
-          // 한 건이 실패해도 나머지 배지는 살린다.
-          return [app.id, "none"] as const;
-        }
-      })
-    );
-    const stateById = new Map<string, RetrospectState>(states);
-    setApplications((prev) =>
-      prev.map((app) => ({
-        ...app,
-        retrospect: stateById.get(app.id) ?? app.retrospect,
-      }))
-    );
     if (page === 1) {
-      setBannerApp((prev) =>
-        prev ? { ...prev, retrospect: stateById.get(prev.id) ?? prev.retrospect } : prev
-      );
+      const banner = pageApps[0] ?? null;
+      setBannerApp(banner);
+      setBannerDetail(null);
+      if (banner) {
+        // 배너 하나 때문에 목록 전체를 막지 않도록 실패는 삼킨다 (배너만 안 뜬다).
+        getApplicationDetail(banner.id, token)
+          .then(setBannerDetail)
+          .catch(() => setBannerDetail(null));
+      }
     }
   };
 
@@ -201,21 +210,62 @@ export default function Home() {
     loadData();
   }, [router]);
 
-  const getNextAction = (app: Application) => {
-    if (app.retrospect !== "done" && app.statusType === "progress") {
+  /**
+   * 배너에 권할 "다음 할 일". 없으면 null 이라 배너 자체를 숨긴다.
+   *
+   * 판단 기준은 전부 상세 API 의 게이팅 플래그다. 예전에는 플래그를 보지 않고
+   * 무조건 "예상 질문 추출하기"로 떨어뜨려서, 전형이 끝났거나(최종면접 탈락)
+   * 이미 추출한 지원에도 버튼이 떴고 누르면 403/409 가 났다.
+   */
+  const getNextAction = (app: Application, detail: ApplicationDetailResponse | null) => {
+    if (!detail) return null;
+
+    const flags = {
+      "1차면접": {
+        available: detail.first_retrospect_available,
+        completed: detail.first_retrospect_completed,
+      },
+      "2차면접": {
+        available: detail.second_retrospect_available,
+        completed: detail.second_retrospect_completed,
+      },
+      "최종면접": {
+        available: detail.final_retrospect_available,
+        completed: detail.final_retrospect_completed,
+      },
+    } as const;
+
+    // 아직 회고 안 한 면접 중 가장 최근 단계를 권한다.
+    const pending = [...INTERVIEW_STAGES]
+      .reverse()
+      .find((stage) => flags[stage].available && !flags[stage].completed);
+
+    if (pending) {
       return {
         title: app.company,
-        action: `회고하러 가볼까요?`,
+        action: `${pending} 회고하러 가볼까요?`,
         button: "회고 시작하기",
-        href: `/retrospective?applicationId=${app.id}`,
+        // stage 를 빼면 서버가 "현재 전형 단계"로 정해버려 엉뚱한 회고가 열린다.
+        href: `/retrospective?applicationId=${app.id}&stage=${encodeURIComponent(pending)}`,
+      };
+    }
+
+    if (!detail.speech_practice_available) return null;
+
+    if (!detail.speech_practice_created) {
+      return {
+        title: app.company,
+        action: `예상 질문을 추출해볼까요?`,
+        button: "예상 질문 추출하기",
+        href: `/applications/${app.id}/extract-questions`,
       };
     }
 
     return {
       title: app.company,
-      action: `예상 질문을 추출해볼까요?`,
-      button: "예상 질문 추출하기",
-      href: `/applications/${app.id}/extract-questions`,
+      action: `면접 연습을 해볼까요?`,
+      button: "면접 연습하기",
+      href: `/interview-practice?applicationId=${app.id}`,
     };
   };
 
@@ -258,6 +308,7 @@ export default function Home() {
                 ...app,
                 statusLine1: result.stage,
                 statusLine2: result.status,
+                retrospect: retrospectStateAfterStageChange(app, result.stage),
                 statusType:
                   result.status === "탈락"
                     ? "fail"
@@ -281,28 +332,17 @@ export default function Home() {
   };
 
   const handleModalClose = async () => {
-    if (selectedApp) {
-      try {
-        const token = getAccessToken();
-        if (!token) return;
-
-        const retrospects = await getRetrospects(selectedApp.id, token);
-        const state = retrospectStateOf(retrospects.sessions);
-
-        setApplications((prev) =>
-          prev.map((app) =>
-            app.id === selectedApp.id ? { ...app, retrospect: state } : app
-          )
-        );
-        setBannerApp((prev) =>
-          prev && prev.id === selectedApp.id ? { ...prev, retrospect: state } : prev
-        );
-      } catch (error) {
-        console.error("Failed to update application:", error);
-      }
-    }
-
     setSelectedApp(null);
+
+    // 모달에서 단계를 바꾸거나 회고를 했을 수 있으니 현재 페이지를 다시 받아
+    // 서버 기준 회고 상태로 맞춘다 (페이지 단위 요청 1번).
+    const token = getAccessToken();
+    if (!token) return;
+    try {
+      await loadPage(currentPage, token);
+    } catch (error) {
+      console.error("Failed to refresh applications:", error);
+    }
   };
 
   /** 모달 안에서 단계 결과를 바꾸면 홈 카드도 바로 따라간다 (새로고침 불필요). */
@@ -317,6 +357,7 @@ export default function Home() {
               ...app,
               statusLine1: next.stage,
               statusLine2: next.status ?? app.statusLine2,
+              retrospect: retrospectStateAfterStageChange(app, next.stage),
               statusType:
                 next.status === "탈락"
                   ? "fail"
@@ -373,7 +414,8 @@ export default function Home() {
             {/* Banner */}
             {(() => {
               if (!bannerApp) return null;
-              const nextAction = getNextAction(bannerApp);
+              const nextAction = getNextAction(bannerApp, bannerDetail);
+              if (!nextAction) return null;
               return (
                 <button
                   onClick={() => router.push(nextAction.href)}
@@ -423,14 +465,19 @@ export default function Home() {
                       <div>{app.statusLine1}</div>
                       <div>{app.statusLine2}</div>
                     </div>
-                    <button
-                      className={`${RETROSPECT_BADGE[app.retrospect].color} text-white text-sm font-bold rounded-lg transition-colors cursor-pointer w-20 h-10 flex items-center justify-center`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="text-center">
-                        {RETROSPECT_BADGE[app.retrospect].label}
-                      </div>
-                    </button>
+                    {app.retrospect ? (
+                      <button
+                        className={`${RETROSPECT_BADGE[app.retrospect].color} text-white text-sm font-bold rounded-lg transition-colors cursor-pointer w-20 h-10 flex items-center justify-center`}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="text-center">
+                          {RETROSPECT_BADGE[app.retrospect].label}
+                        </div>
+                      </button>
+                    ) : (
+                      // 면접 단계가 아니면 회고 배지 없이 자리만 맞춘다.
+                      <div className="w-20 h-10" aria-hidden />
+                    )}
                   </div>
                 </div>
               ))}
