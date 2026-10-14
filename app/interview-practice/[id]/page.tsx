@@ -336,7 +336,7 @@ export default function SpeechPracticePage() {
                   <p className="mt-2 text-xs text-gray-600">
                     {elapsedSec < SLOW_ANALYSIS_SEC
                       ? "보통 30초 안팎이 걸려요. 창을 닫지 말고 기다려주세요."
-                      : "조금 더 걸리고 있어요. 최대 3분까지 기다립니다 — 창을 닫지 말아주세요."}
+                      : "조금 더 걸리고 있어요. — 창을 닫지 말아주세요."}
                   </p>
                 </div>
               )}
