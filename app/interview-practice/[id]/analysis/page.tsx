@@ -8,7 +8,12 @@ import {
   subscribeSpeechAnalysis,
 } from "@/lib/speech-analysis-store";
 import { hasStarAnalysis } from "@/lib/api";
-import type { SpeechAnalysisResponse, StarItem } from "@/lib/api";
+import type {
+  AcousticBaseline,
+  SpeechAnalysisResponse,
+  StarItem,
+} from "@/lib/api";
+import BaselineGauge, { isDrawableBaseline } from "@/components/baseline-gauge";
 
 const STAR_ITEMS = [
   { key: "situation", label: "Situation", sublabel: "상황 설명" },
@@ -20,6 +25,31 @@ const STAR_ITEMS = [
 function formatNumber(value: number | null, fractionDigits = 0): string {
   if (value === null || Number.isNaN(value)) return "-";
   return value.toFixed(fractionDigits);
+}
+
+/** 게이지가 그려진 지표들의 기준 데이터 출처. 하나도 없으면 null. */
+function describeBaselineSource(
+  speed: AcousticBaseline | null,
+  length: AcousticBaseline | null
+): { text: string; detail: string } | null {
+  const entries = [
+    { name: "말 속도", baseline: speed },
+    { name: "답변 길이", baseline: length },
+  ].filter(
+    (entry): entry is { name: string; baseline: AcousticBaseline } =>
+      entry.baseline !== null
+  );
+  if (entries.length === 0) return null;
+
+  const sources = [...new Set(entries.map((entry) => entry.baseline.source))];
+  const text =
+    sources.length === 1
+      ? `${entries.map((entry) => entry.name).join("·")} 기준: ${sources[0]}`
+      : entries.map((entry) => `${entry.name} 기준: ${entry.baseline.source}`).join(" / ");
+  const detail = entries
+    .map((entry) => `${entry.name} ${entry.baseline.sample_count.toLocaleString()}건`)
+    .join(", ");
+  return { text, detail: `표본 수 — ${detail}` };
 }
 
 export default function InterviewAnalysisPage() {
@@ -92,6 +122,14 @@ export default function InterviewAnalysisPage() {
   const fillerWords = Object.entries(acoustic.filler_words ?? {});
   const keywordRepeat = Object.entries(content.keyword_repeat ?? {});
   const overall = feedback.overall ?? content.overall ?? null;
+  // baseline 이 없는 예전 결과는 게이지를 숨기고 기존 문구만 보여준다.
+  const speedBaseline = isDrawableBaseline(acoustic.speed_baseline)
+    ? acoustic.speed_baseline
+    : null;
+  const lengthBaseline = isDrawableBaseline(acoustic.length_baseline)
+    ? acoustic.length_baseline
+    : null;
+  const baselineSource = describeBaselineSource(speedBaseline, lengthBaseline);
 
   const isBehavioral = content.question_type === "행동형";
   const typeBadgeColor = isBehavioral
@@ -118,9 +156,16 @@ export default function InterviewAnalysisPage() {
 
             {/* Acoustic Analysis */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-5">
-                음향 분석
-              </h2>
+              <div className="flex items-baseline justify-between gap-3 flex-wrap mb-5">
+                <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                  음향 분석
+                </h2>
+                {baselineSource && (
+                  <p className="text-[11px] text-gray-400" title={baselineSource.detail}>
+                    {baselineSource.text}
+                  </p>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-gray-100 rounded-lg p-4">
@@ -136,6 +181,16 @@ export default function InterviewAnalysisPage() {
                       {acoustic.speed_label}
                     </div>
                   )}
+                  {speedBaseline && acoustic.speed_wpm !== null && (
+                    <BaselineGauge
+                      value={acoustic.speed_wpm}
+                      baseline={speedBaseline}
+                      minLabel="느림"
+                      maxLabel="빠름"
+                      markerLabel="나"
+                      meanLabel={`평균 ${speedBaseline.mean.toFixed(1)}`}
+                    />
+                  )}
                 </div>
 
                 <div className="bg-gray-100 rounded-lg p-4">
@@ -146,9 +201,25 @@ export default function InterviewAnalysisPage() {
                       어절
                     </span>
                   </div>
-                  <div className="mt-3 text-xs text-gray-600">
-                    {formatNumber(acoustic.duration_sec, 1)}초 분량
-                  </div>
+                  {lengthBaseline && acoustic.length_label ? (
+                    <div className="mt-3 text-xs text-gray-700 leading-relaxed">
+                      {acoustic.length_label}
+                    </div>
+                  ) : (
+                    <div className="mt-3 text-xs text-gray-600">
+                      {formatNumber(acoustic.duration_sec, 1)}초 분량
+                    </div>
+                  )}
+                  {lengthBaseline && acoustic.duration_sec !== null && (
+                    <BaselineGauge
+                      value={acoustic.duration_sec}
+                      baseline={lengthBaseline}
+                      minLabel="짧음"
+                      maxLabel="김"
+                      markerLabel={`나 ${Math.round(acoustic.duration_sec)}초`}
+                      meanLabel={`평균 ${Math.round(lengthBaseline.mean)}초`}
+                    />
+                  )}
                 </div>
 
                 <div className="bg-gray-100 rounded-lg p-4">

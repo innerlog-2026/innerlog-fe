@@ -591,6 +591,24 @@ export interface AcousticResult {
   silence_count: number | null;
   duration_sec: number | null;
   word_count: number | null;
+  /** 말 속도 기준값 (어절/분). 예전 결과에는 없다. */
+  speed_baseline?: AcousticBaseline | null;
+  /** 답변 시간 기준값 (초). 예전 결과에는 없다. */
+  length_baseline?: AcousticBaseline | null;
+  /** 답변 길이에 대한 서술 (예: "평균(89.38초)보다 짧은 편이에요") */
+  length_label?: string | null;
+}
+
+/** AI Hub 채용면접 데이터로 계산한 지표별 분포. p33~p67 이 "보통 범위"다. */
+export interface AcousticBaseline {
+  mean: number;
+  p5: number;
+  p33: number;
+  p67: number;
+  p95: number;
+  unit?: string;
+  source: string;
+  sample_count: number;
 }
 
 /** STAR 요소 1개. 비행동형 질문이면 두 필드 모두 null 로 온다. */
